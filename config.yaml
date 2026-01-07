@@ -73,16 +73,8 @@ classification_rules:
   "Telkom": cellphone
   "Cell C": cellphone
 
-  # Deposits
-  "Credit Voucher": deposit
-  "FNB App Payment From": deposit
-  "Payment From": transfer
-  "Magtape Credit": deposit
-  "Paypal Withdrawal": deposit
-  "Payshap Credit": deposit
-  "Runpod": deposit
-
   # Domestic worker
+  "Domestic Worker": domestic_worker
   "Sweep South": domestic_worker
 
   # Education (check before eft_payment)
@@ -184,7 +176,7 @@ classification_rules:
   "Disc Prem": medical
 
   # Municipal
-  "Ekurhuleni": utilities
+  "Ekurhuleni": municipal
 
   # Online Shopping
   "Buffalo Internation": online_shopping
@@ -285,6 +277,15 @@ classification_rules:
   "Scw*": other
   "Google": other
   "The Crazy Store": other
+
+  # Deposits
+  "Credit Voucher": deposit
+  "FNB App Payment From": deposit
+  "Payment From": transfer
+  "Magtape Credit": deposit
+  "Paypal Withdrawal": deposit
+  "Payshap Credit": deposit
+  "Runpod": deposit
 
   # EFT Payments (general - keep last)
   "FNB App Payment To": eft_payment
