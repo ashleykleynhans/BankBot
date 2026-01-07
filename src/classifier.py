@@ -147,9 +147,14 @@ Rules:
             if category not in self.categories:
                 category = "other"
 
+            # Convert string "null" to Python None
+            recipient = data.get("recipient_or_payer")
+            if recipient == "null":
+                recipient = None
+
             return ClassificationResult(
                 category=category,
-                recipient_or_payer=data.get("recipient_or_payer"),
+                recipient_or_payer=recipient,
                 confidence=data.get("confidence", "medium")
             )
         except json.JSONDecodeError:

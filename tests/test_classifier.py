@@ -116,6 +116,14 @@ class TestResponseParsing:
 
         assert result.category == "other"
 
+    def test_parse_null_string_as_recipient(self, classifier):
+        """Test parsing 'null' string for recipient converts to None."""
+        response = '{"category": "fuel", "recipient_or_payer": "null", "confidence": "high"}'
+        result = classifier._parse_response(response)
+
+        assert result.category == "fuel"
+        assert result.recipient_or_payer is None
+
 
 class TestBatchClassification:
     """Tests for batch classification."""
