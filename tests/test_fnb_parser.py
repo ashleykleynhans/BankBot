@@ -111,7 +111,7 @@ class TestTransactionLineParsing:
         assert result.balance == 16446.75
 
     def test_parse_fee_line(self, parser):
-        """Test parsing a fee line (no description)."""
+        """Test parsing a fee line (no description, debit)."""
         line = "30 Sep 3.00 19,125.65Cr"
         result = parser._parse_transaction_line(line, 2025)
 
@@ -119,6 +119,16 @@ class TestTransactionLineParsing:
         assert result.date == "2025-09-30"
         assert result.description == "Bank fee/charge"
         assert result.amount == -3.00
+
+    def test_parse_credit_line_no_description(self, parser):
+        """Test parsing a credit line with no description."""
+        line = "15 Oct 5,000.00Cr 25,000.00Cr"
+        result = parser._parse_transaction_line(line, 2025)
+
+        assert result is not None
+        assert result.date == "2025-10-15"
+        assert result.description == "Credit/Deposit"
+        assert result.amount == 5000.00
 
     def test_parse_transaction_with_comma_amount(self, parser):
         """Test parsing transaction with comma in amount."""

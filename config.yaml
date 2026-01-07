@@ -67,6 +67,7 @@ categories:
 # Note: More specific rules should come before general ones
 classification_rules:
   # Withdrawals
+  "ATM Cash": withdrawal
   "ATM Withdrawal": withdrawal
   "Cash Withdrawal": withdrawal
 
@@ -88,11 +89,6 @@ classification_rules:
 
   # Education (check before eft_payment)
   "School Fees": education
-
-  # Electricity
-  "Eskom": electricity
-  "City Power": electricity
-  "Electricity": electricity
 
   # Entertainment
   "Ster Kinekor": entertainment
@@ -159,6 +155,7 @@ classification_rules:
   "Outsurance": insurance
   "Cap Legac": insurance
   "Old Mutual": insurance
+  "Oldmutcol": insurance
   "Sanlam": insurance
   "Discovery": insurance
   "Liberty": insurance
@@ -288,6 +285,11 @@ classification_rules:
 
   # Vehicle Maintenance
   "Alberton Tyre": vehicle_maintenance
+
+  # Electricity
+  "Eskom": electricity
+  "City Power": electricity
+  "Electricity": electricity
 
   # Other specific
   "Scaleway": other

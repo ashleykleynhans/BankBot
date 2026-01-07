@@ -219,9 +219,14 @@ class FNBParser(BaseBankParser):
         desc_end = amounts[0].start() if amounts else len(rest)
         description = rest[:desc_end].strip()
 
-        # If no description, it might be a fee line
+        # If no description, determine based on transaction type
         if not description and len(amounts) >= 2:
-            description = "Bank fee/charge"
+            # Check if it's a credit or debit based on suffix
+            first_amount_suffix = amount_match.group(2)
+            if first_amount_suffix == "Cr":
+                description = "Credit/Deposit"
+            else:
+                description = "Bank fee/charge"
 
         # Parse the amount
         amount_str = amount_match.group(1).replace(",", "")
