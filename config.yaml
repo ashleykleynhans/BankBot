@@ -16,59 +16,92 @@ paths:
 
 # Classification categories (customizable)
 categories:
-  - medical
-  - optician
-  - groceries
-  - garden_service
+  - airtime
+  - cellphone
+  - deposit
   - dog_parlour
   - domestic_worker
   - education
-  - fuel
-  - utilities
-  - insurance
-  - entertainment
-  - transfer
-  - salary
-  - cellphone
-  - home_maintenance
-  - fees
-  - deposit
-  - savings
   - eft_payment
+  - entertainment
+  - fast_food
+  - fees
+  - fuel
+  - garden_service
+  - groceries
+  - home_maintenance
+  - insurance
+  - medical
+  - optician
   - other
+  - reversal
+  - salary
+  - savings
+  - security
+  - stationery
+  - transfer
+  - transport
+  - utilities
+  - vehicle_maintenance
+  - vehicle_tracking
 
 # Classification rules (checked before LLM, case-insensitive)
 # Format: pattern -> category
 # Note: More specific rules should come before general ones
 classification_rules:
-  # Medical (check before eft_payment)
-  " Dr ": medical
-  "Doctor": medical
-  "Pharmacy": medical
-  "Dentist": medical
-  "Optom": medical
-
-  # Education (check before eft_payment)
-  "School Fees": education
-
-  # Domestic worker
-  "Sweep South": domestic_worker
-
-  # Entertainment
-  "Paddle.Net* Put.Io": entertainment
-  "Ekurhuleni": utilities
-
-  # Other specific
-  "Scw*": other
-  "Google": other
+  # Airtime
+  "Prepaid Airtime": airtime
 
   # Cellphone
   "Vodacom": cellphone
   "MTN": cellphone
   "Telkom": cellphone
+  "Cell C": cellphone
 
-  # Home & Vehicle
-  "Cartrack": other
+  # Deposits
+  "Magtape Credit": deposit
+
+  # Domestic worker
+  "Sweep South": domestic_worker
+
+  # Education (check before eft_payment)
+  "School Fees": education
+
+  # EFT Payments (general - keep last)
+  "FNB App Payment To": eft_payment
+  "Internet Pmt To": eft_payment
+
+  # Entertainment
+  "Paddle.Net* Put.Io": entertainment
+
+  # Fast Food
+  "KFC": fast_food
+  "Kota Joe": fast_food
+  "Steers": fast_food
+  "Mcd": fast_food
+  "Nandos": fast_food
+  "Burger King": fast_food
+  "Wimpy": fast_food
+  "Chicken Licken": fast_food
+  "Fishaways": fast_food
+  "Domino's": fast_food
+  "Pizza Hut": fast_food
+
+  # Fees
+  "Bank fee": fees
+  "Service Fee": fees
+  "Monthly Fee": fees
+
+  # Groceries
+  "Woolworths": groceries
+  "Checkers": groceries
+  "Pick n Pay": groceries
+  "PNP Fam": groceries
+  "Spar": groceries
+  "Shoprite": groceries
+  "Food Lover's Market": groceries
+
+  # Home Maintenance
   "Roof Repair": home_maintenance
   "Plumber": home_maintenance
   "Electrician": home_maintenance
@@ -81,22 +114,51 @@ classification_rules:
   "Discovery": insurance
   "Liberty": insurance
 
-  # Fees
-  "Bank fee": fees
-  "Service Fee": fees
-  "Monthly Fee": fees
-  "Magtape Unpaid": fees
+  # Medical (check before eft_payment)
+  " Dr ": medical
+  "Doctor": medical
+  "Pharmacy": medical
+  "Dentist": medical
+  "Optom": medical
+  "Hospital": medical
+  "Mediclinic": medical
+  "Netcare": medical
+  "Dis-Chem": medical
+  "Clicks": medical
 
-  # Deposits & Savings
-  "Magtape Credit": deposit
+  # Other specific
+  "Scw*": other
+  "Google": other
+
+  # Reversals
+  "Magtape Unpaid": reversal
+
+  # Savings & Investments
   "Payment To Investment": savings
   "Schedule Trf To Invest": savings
+
+  # Security
+  "ADT": security
+  "Cps Sec": security
+
+  # Stationery
+  "PNA": stationery
+  "Typo": stationery
 
   # Transfers (incoming and outgoing)
   "Payment From": transfer
   "Payshap Credit": transfer
   "FNB App Transfer": transfer
 
-  # EFT Payments (general - keep last)
-  "FNB App Payment To": eft_payment
-  "Internet Pmt To": eft_payment
+  # Transport
+  "Uber": transport
+
+  # Utilities
+  "Ekurhuleni": utilities
+
+  # Vehicle Tracking
+  "Tracker": vehicle_tracking
+  "Cartrack": vehicle_tracking
+
+  # Vehicle Maintenance
+  "Alberton Tyre": vehicle_maintenance
