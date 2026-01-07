@@ -135,7 +135,8 @@ class FNBParser(BaseBankParser):
                 continue
 
             # Detect start of transactions section (handle with/without space)
-            if "Transactions in" in line and "RAND" in line:
+            # Some PDFs extract text without spaces: "TransactionsinRAND"
+            if ("Transactions in" in line or "Transactionsin" in line) and "RAND" in line:
                 in_transactions = True
                 continue
 
@@ -165,8 +166,8 @@ class FNBParser(BaseBankParser):
         # "02 Oct Internet Pmt To Keanu... 720.00 18,196.65Cr"
         # "06 Oct FNB App Payment From Mom 5,200.00Cr 16,446.75Cr"
 
-        # Match date at start
-        date_match = re.match(r"^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b", line, re.IGNORECASE)
+        # Match date at start (whitespace between day and month is optional due to PDF extraction)
+        date_match = re.match(r"^(\d{1,2})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b", line, re.IGNORECASE)
         if not date_match:
             return None
 
