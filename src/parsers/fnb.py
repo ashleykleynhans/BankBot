@@ -108,12 +108,24 @@ class FNBParser(BaseBankParser):
         in_transactions = False
         current_year = None
 
-        # Try to extract year from statement
+        # Try to extract year and month from statement
         year_match = re.search(r"Statement\s*(?:Date|Period).*?(\d{4})", text)
         if year_match:
             current_year = int(year_match.group(1))
         else:
             current_year = datetime.now().year
+
+        # Also extract statement month for year boundary handling
+        statement_month = None
+        month_match = re.search(r"Statement\s*Date\s*[:\s]+\d{1,2}\s+(\w+)\s+\d{4}", text, re.IGNORECASE)
+        if month_match:
+            try:
+                statement_month = datetime.strptime(month_match.group(1), "%B").month
+            except ValueError:
+                try:
+                    statement_month = datetime.strptime(month_match.group(1), "%b").month
+                except ValueError:
+                    pass
 
         for line in lines:
             line = line.strip()
@@ -139,13 +151,13 @@ class FNBParser(BaseBankParser):
                 continue
 
             # Try to parse transaction line
-            tx = self._parse_transaction_line(line, current_year)
+            tx = self._parse_transaction_line(line, current_year, statement_month)
             if tx:
                 transactions.append(tx)
 
         return transactions
 
-    def _parse_transaction_line(self, line: str, year: int) -> Transaction | None:
+    def _parse_transaction_line(self, line: str, year: int, statement_month: int | None = None) -> Transaction | None:
         """Parse a single transaction line."""
         # Pattern: DD Mon [Description] Amount Balance [BankCharges]
         # Examples:
@@ -165,6 +177,16 @@ class FNBParser(BaseBankParser):
         try:
             date_str = f"{day} {month} {year}"
             dt = datetime.strptime(date_str, "%d %b %Y")
+
+            # Handle year boundary: if transaction month is much later than statement month,
+            # it's likely from the previous year (e.g., Dec transaction in a Feb statement)
+            if statement_month is not None:
+                tx_month = dt.month
+                # If transaction month is > 6 months after statement month, assume previous year
+                # e.g., statement is Feb (2), transaction is Dec (12): 12 - 2 = 10 > 6
+                if tx_month - statement_month > 6:
+                    dt = dt.replace(year=year - 1)
+
             date = dt.strftime("%Y-%m-%d")
         except ValueError:
             return None

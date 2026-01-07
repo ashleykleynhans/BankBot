@@ -157,6 +157,29 @@ class TestTransactionLineParsing:
         assert result is not None
         assert result.balance == -100.00
 
+    def test_parse_transaction_year_boundary(self, parser):
+        """Test year adjustment for transactions crossing year boundary.
+
+        A December transaction in a February statement should be previous year.
+        """
+        line = "29 Dec Bank fee/charge 5.00 1,000.00Cr"
+        # Statement is February (month 2) of 2024
+        result = parser._parse_transaction_line(line, 2024, statement_month=2)
+
+        assert result is not None
+        # Should be December 2023, not December 2024
+        assert result.date == "2023-12-29"
+
+    def test_parse_transaction_same_year(self, parser):
+        """Test that nearby months don't get year adjusted."""
+        line = "15 Jan Some Payment 100.00 5,000.00Cr"
+        # Statement is February (month 2) of 2024
+        result = parser._parse_transaction_line(line, 2024, statement_month=2)
+
+        assert result is not None
+        # January is close to February, should stay same year
+        assert result.date == "2024-01-15"
+
     def test_parse_invalid_date_month(self, parser):
         """Test parsing transaction with invalid date returns None."""
         # Invalid month abbreviation should cause ValueError in strptime
@@ -221,6 +244,39 @@ class TestTransactionsParsing:
         # Should only have 1 transaction, not the header
         for tx in transactions:
             assert "Description" not in tx.description
+
+    def test_parse_transactions_abbreviated_month(self, parser):
+        """Test parsing with abbreviated month name in statement date."""
+        text = """
+        Statement Date : 1 Feb 2024
+
+        Transactions in RAND
+        Date Description Amount Balance
+        29 Dec Bank fee/charge 5.00 1,000.00Cr
+        15 Jan Another payment 100.00 900.00Cr
+        """
+        transactions = parser._parse_transactions(text)
+
+        assert len(transactions) == 2
+        # December should be previous year (2023) due to year boundary
+        assert transactions[0].date == "2023-12-29"
+        # January should be same year (2024)
+        assert transactions[1].date == "2024-01-15"
+
+    def test_parse_transactions_invalid_month_in_statement(self, parser):
+        """Test parsing with invalid month name falls back gracefully."""
+        text = """
+        Statement Date : 1 Xyz 2024
+
+        Transactions in RAND
+        Date Description Amount Balance
+        15 Jan Test payment 100.00 900.00Cr
+        """
+        transactions = parser._parse_transactions(text)
+
+        # Should still parse transactions, just without year boundary adjustment
+        assert len(transactions) == 1
+        assert transactions[0].date == "2024-01-15"
 
 
 class TestParseFile:
