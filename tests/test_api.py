@@ -421,3 +421,59 @@ class TestWebSocketChat:
 
             # After disconnect, session should be removed
             mock_manager.remove_session.assert_called_with("test-session-id")
+
+
+class TestLifespan:
+    """Tests for application lifespan."""
+
+    def test_lifespan_startup_shutdown(self):
+        """Test lifespan context manager startup and shutdown."""
+        import asyncio
+        from src.api.app import lifespan, create_app
+
+        app = create_app()
+
+        async def run_lifespan():
+            with patch('src.api.app.get_config') as mock_get_config, \
+                 patch('src.api.app.Database') as mock_db_class:
+                mock_get_config.return_value = {
+                    "paths": {"database": "test.db"},
+                    "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+                }
+                mock_db_class.return_value = Mock()
+
+                # Use the lifespan context manager
+                async with lifespan(app):
+                    # Verify startup happened
+                    assert hasattr(app.state, 'config')
+                    assert hasattr(app.state, 'db')
+                    mock_db_class.assert_called_with("test.db")
+
+                # After exiting, cleanup should have happened (task cancelled)
+
+        asyncio.run(run_lifespan())
+
+    def test_periodic_cleanup(self):
+        """Test periodic cleanup function."""
+        import asyncio
+        from src.api.app import periodic_cleanup
+
+        async def run_cleanup():
+            call_count = 0
+
+            async def mock_sleep_fn(seconds):
+                nonlocal call_count
+                call_count += 1
+                if call_count > 1:
+                    raise asyncio.CancelledError()
+
+            with patch('src.api.app.session_manager') as mock_manager, \
+                 patch('src.api.app.asyncio.sleep', mock_sleep_fn):
+
+                with pytest.raises(asyncio.CancelledError):
+                    await periodic_cleanup()
+
+                # cleanup_stale_sessions should have been called
+                mock_manager.cleanup_stale_sessions.assert_called_with(max_age_minutes=60)
+
+        asyncio.run(run_cleanup())
