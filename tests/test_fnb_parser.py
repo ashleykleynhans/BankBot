@@ -278,6 +278,32 @@ class TestTransactionsParsing:
         assert len(transactions) == 1
         assert transactions[0].date == "2024-01-15"
 
+    def test_parse_transactions_no_space_in_header(self, parser):
+        """Test parsing when PDF extracts text without spaces in header."""
+        text = """
+        Statement Date : 1 November 2025
+
+        TransactionsinRAND(ZAR)
+        Date Description Amount Balance
+        15 Oct Some Payment 100.00 1,000.00Cr
+        """
+        transactions = parser._parse_transactions(text)
+
+        assert len(transactions) == 1
+        assert transactions[0].date == "2025-10-15"
+        assert transactions[0].amount == -100.00
+
+    def test_parse_transaction_no_space_between_day_and_month(self, parser):
+        """Test parsing when PDF extracts date without space between day and month."""
+        line = "02Jan POSPurchase Uber 124.33 14,149.25Cr"
+        result = parser._parse_transaction_line(line, 2025)
+
+        assert result is not None
+        assert result.date == "2025-01-02"
+        assert result.description == "POSPurchase Uber"
+        assert result.amount == -124.33
+        assert result.balance == 14149.25
+
 
 class TestParseFile:
     """Tests for full PDF parsing."""
