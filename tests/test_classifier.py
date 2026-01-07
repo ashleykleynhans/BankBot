@@ -50,6 +50,18 @@ class TestRulesBasedClassification:
         result = classifier.classify("Dr Smith Medical", -200)
         assert result.category == "medical"
 
+    def test_matches_without_spaces_in_description(self, classifier):
+        """Test rules match when description has no spaces (PDF extraction issue)."""
+        # Description without spaces should still match "Woolworths" rule
+        result = classifier._check_rules("POSPurchaseWoolworthsFood")
+        assert result == "groceries"
+
+    def test_matches_without_spaces_in_pattern(self, classifier):
+        """Test rules match when pattern would have no spaces in description."""
+        # "Shell" should match "ShellFuelStation" (no spaces)
+        result = classifier._check_rules("ShellFuelStation")
+        assert result == "fuel"
+
 
 class TestLLMClassification:
     """Tests for LLM-based classification."""
