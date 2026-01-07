@@ -78,6 +78,9 @@ python -m src.main stats
 
 # List available bank parsers
 python -m src.main parsers
+
+# Rename PDFs to standardized format: {number}_{month}_{year}.pdf
+python -m src.main rename
 ```
 
 ## Re-importing Statements

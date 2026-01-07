@@ -9,7 +9,7 @@ from io import StringIO
 from src import main
 from src.main import (
     cmd_import, cmd_watch, cmd_chat, cmd_list,
-    cmd_categories, cmd_stats, cmd_search, cmd_parsers
+    cmd_categories, cmd_stats, cmd_search, cmd_parsers, cmd_rename
 )
 
 
@@ -467,3 +467,159 @@ class TestMain:
                 )
                 # Should not raise, just print help
                 main.main()
+
+    @patch('src.main.get_config')
+    @patch('src.main.cmd_rename')
+    def test_main_rename_command(self, mock_cmd, mock_config):
+        """Test main with rename command."""
+        mock_config.return_value = {
+            "bank": "fnb",
+            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "paths": {"database": "test.db", "statements_dir": "./statements"},
+        }
+
+        with patch.object(sys, 'argv', ['prog', 'rename']):
+            main.main()
+
+        mock_cmd.assert_called_once()
+
+
+class TestCmdRename:
+    """Tests for cmd_rename function."""
+
+    def test_rename_missing_directory(self, mock_args, tmp_path):
+        """Test rename with missing statements directory."""
+        config = {
+            "paths": {"statements_dir": str(tmp_path / "nonexistent")}
+        }
+
+        with pytest.raises(SystemExit) as exc:
+            cmd_rename(mock_args, config)
+
+        assert exc.value.code == 1
+
+    def test_rename_already_correct_format(self, mock_args, tmp_path):
+        """Test rename skips files already in correct format."""
+        # Create a file with correct format
+        (tmp_path / "287_Oct_2025.pdf").write_bytes(b"dummy")
+
+        config = {"paths": {"statements_dir": str(tmp_path)}}
+
+        cmd_rename(mock_args, config)
+
+        # File should still exist with same name
+        assert (tmp_path / "287_Oct_2025.pdf").exists()
+
+    @patch('src.main.pdfplumber.open')
+    def test_rename_no_statement_number(self, mock_pdf, mock_args, tmp_path):
+        """Test rename skips files without statement number."""
+        # Create a PDF file
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"dummy")
+
+        # Mock PDF with no statement number
+        mock_page = Mock()
+        mock_page.extract_text.return_value = "Some text without statement number"
+        mock_pdf.return_value.__enter__.return_value.pages = [mock_page]
+
+        config = {"paths": {"statements_dir": str(tmp_path)}}
+
+        cmd_rename(mock_args, config)
+
+        # File should still exist with original name
+        assert pdf_file.exists()
+
+    @patch('src.main.pdfplumber.open')
+    def test_rename_no_statement_date(self, mock_pdf, mock_args, tmp_path):
+        """Test rename skips files without statement date."""
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"dummy")
+
+        mock_page = Mock()
+        mock_page.extract_text.return_value = "Tax Invoice/Statement Number : 287"
+        mock_pdf.return_value.__enter__.return_value.pages = [mock_page]
+
+        config = {"paths": {"statements_dir": str(tmp_path)}}
+
+        cmd_rename(mock_args, config)
+
+        assert pdf_file.exists()
+
+    @patch('src.main.pdfplumber.open')
+    def test_rename_success(self, mock_pdf, mock_args, tmp_path):
+        """Test successful rename."""
+        pdf_file = tmp_path / "old_name.pdf"
+        pdf_file.write_bytes(b"dummy")
+
+        mock_page = Mock()
+        mock_page.extract_text.return_value = """
+            Tax Invoice/Statement Number : 287
+            Statement Date : 1 October 2025
+        """
+        mock_pdf.return_value.__enter__.return_value.pages = [mock_page]
+
+        config = {"paths": {"statements_dir": str(tmp_path)}}
+
+        cmd_rename(mock_args, config)
+
+        # Original file should not exist
+        assert not pdf_file.exists()
+        # New file should exist
+        assert (tmp_path / "287_Oct_2025.pdf").exists()
+
+    @patch('src.main.pdfplumber.open')
+    def test_rename_abbreviated_month(self, mock_pdf, mock_args, tmp_path):
+        """Test rename with abbreviated month format."""
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"dummy")
+
+        mock_page = Mock()
+        mock_page.extract_text.return_value = """
+            Tax Invoice/Statement Number : 288
+            Statement Date : 15 Nov 2025
+        """
+        mock_pdf.return_value.__enter__.return_value.pages = [mock_page]
+
+        config = {"paths": {"statements_dir": str(tmp_path)}}
+
+        cmd_rename(mock_args, config)
+
+        assert (tmp_path / "288_Nov_2025.pdf").exists()
+
+    @patch('src.main.pdfplumber.open')
+    def test_rename_target_exists(self, mock_pdf, mock_args, tmp_path):
+        """Test rename skips if target file exists."""
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"dummy")
+        # Create existing target
+        (tmp_path / "287_Oct_2025.pdf").write_bytes(b"existing")
+
+        mock_page = Mock()
+        mock_page.extract_text.return_value = """
+            Tax Invoice/Statement Number : 287
+            Statement Date : 1 October 2025
+        """
+        mock_pdf.return_value.__enter__.return_value.pages = [mock_page]
+
+        config = {"paths": {"statements_dir": str(tmp_path)}}
+
+        cmd_rename(mock_args, config)
+
+        # Original file should still exist
+        assert pdf_file.exists()
+
+    @patch('src.main.pdfplumber.open')
+    def test_rename_handles_error(self, mock_pdf, mock_args, tmp_path):
+        """Test rename handles PDF parsing errors."""
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"dummy")
+
+        mock_pdf.side_effect = Exception("PDF error")
+
+        config = {"paths": {"statements_dir": str(tmp_path)}}
+
+        # Should not raise
+        cmd_rename(mock_args, config)
+
+        # File should still exist
+        assert pdf_file.exists()

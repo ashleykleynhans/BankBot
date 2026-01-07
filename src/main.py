@@ -2,9 +2,12 @@
 """Bank Statement Chat Bot - CLI Entry Point."""
 
 import argparse
+import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
+import pdfplumber
 from rich.console import Console
 from rich.table import Table
 
@@ -233,6 +236,79 @@ def cmd_parsers(args: argparse.Namespace, config: dict) -> None:
         console.print("  [dim]No parsers available[/dim]")
 
 
+def cmd_rename(args: argparse.Namespace, config: dict) -> None:
+    """Rename statement PDFs to standardized format: {number}_{month}_{year}.pdf"""
+    statements_dir = Path(config["paths"]["statements_dir"])
+
+    if not statements_dir.exists():
+        console.print(f"[red]Statements directory not found: {statements_dir}[/red]")
+        sys.exit(1)
+
+    # Pattern for already-renamed files: 287_Oct_2025.pdf
+    expected_pattern = re.compile(r"^\d+_[A-Z][a-z]{2}_\d{4}\.pdf$")
+
+    renamed = 0
+    skipped = 0
+    errors = 0
+
+    for pdf_file in sorted(statements_dir.glob("*.pdf")):
+        # Skip if already in correct format
+        if expected_pattern.match(pdf_file.name):
+            console.print(f"[dim]SKIP: {pdf_file.name} (already correct format)[/dim]")
+            skipped += 1
+            continue
+
+        try:
+            with pdfplumber.open(pdf_file) as pdf:
+                text = pdf.pages[0].extract_text() or ""
+
+            # Extract Tax Invoice/Statement Number (with or without spaces)
+            match = re.search(r"Tax\s*Invoice/Statement\s*Number\s*[:\s]+(\d+)", text, re.IGNORECASE)
+            if not match:
+                console.print(f"[yellow]SKIP: {pdf_file.name} - no statement number found[/yellow]")
+                skipped += 1
+                continue
+            statement_num = match.group(1)
+
+            # Extract Statement Date (with or without spaces)
+            match = re.search(r"Statement\s*Date\s*[:\s]+(\d{1,2}\s*\w+\s*\d{4})", text, re.IGNORECASE)
+            if not match:
+                console.print(f"[yellow]SKIP: {pdf_file.name} - no statement date found[/yellow]")
+                skipped += 1
+                continue
+
+            # Parse date - handle with or without spaces
+            date_str = match.group(1)
+            # Add spaces if missing (e.g., "1February2025" -> "1 February 2025")
+            date_str = re.sub(r"(\d+)([A-Za-z])", r"\1 \2", date_str)
+            date_str = re.sub(r"([A-Za-z])(\d)", r"\1 \2", date_str)
+            try:
+                date_obj = datetime.strptime(date_str, "%d %B %Y")
+            except ValueError:
+                date_obj = datetime.strptime(date_str, "%d %b %Y")
+
+            month = date_obj.strftime("%b")
+            year = date_obj.strftime("%Y")
+
+            new_name = f"{statement_num}_{month}_{year}.pdf"
+            new_path = statements_dir / new_name
+
+            if new_path.exists() and new_path != pdf_file:
+                console.print(f"[yellow]SKIP: {pdf_file.name} -> {new_name} (target exists)[/yellow]")
+                skipped += 1
+                continue
+
+            pdf_file.rename(new_path)
+            console.print(f"[green]RENAMED: {pdf_file.name} -> {new_name}[/green]")
+            renamed += 1
+
+        except Exception as e:
+            console.print(f"[red]ERROR: {pdf_file.name} - {e}[/red]")
+            errors += 1
+
+    console.print(f"\n[bold]Summary: {renamed} renamed, {skipped} skipped, {errors} errors[/bold]")
+
+
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -283,6 +359,9 @@ Examples:
     # Parsers command
     subparsers.add_parser("parsers", help="List available bank parsers")
 
+    # Rename command
+    subparsers.add_parser("rename", help="Rename PDFs to {number}_{month}_{year}.pdf format")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -307,6 +386,7 @@ Examples:
         "stats": cmd_stats,
         "search": cmd_search,
         "parsers": cmd_parsers,
+        "rename": cmd_rename,
     }
 
     cmd_func = commands.get(args.command)
