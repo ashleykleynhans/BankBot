@@ -123,11 +123,45 @@ class ChatInterface:
         """Find transactions relevant to the user's query."""
         query_lower = query.lower()
 
+        # First, determine date range if specified
+        date_start = None
+        date_end = None
+
+        if "last month" in query_lower:
+            today = datetime.now()
+            date_start = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+            date_end = today.replace(day=1) - timedelta(days=1)
+        elif "this month" in query_lower:
+            today = datetime.now()
+            date_start = today.replace(day=1)
+            date_end = today
+
         # Check for category keywords
         categories = self.db.get_all_categories()
+        matched_category = None
         for category in categories:
             if category and category.lower() in query_lower:
-                return self.db.get_transactions_by_category(category)
+                matched_category = category
+                break
+
+        # If we have both date range and category, filter by both
+        if date_start and date_end and matched_category:
+            all_in_range = self.db.get_transactions_in_date_range(
+                date_start.strftime("%Y-%m-%d"),
+                date_end.strftime("%Y-%m-%d")
+            )
+            return [tx for tx in all_in_range if tx.get("category") == matched_category]
+
+        # If only category specified
+        if matched_category:
+            return self.db.get_transactions_by_category(matched_category)
+
+        # If only date range specified
+        if date_start and date_end:
+            return self.db.get_transactions_in_date_range(
+                date_start.strftime("%Y-%m-%d"),
+                date_end.strftime("%Y-%m-%d")
+            )
 
         # Check for transaction type
         if "credit" in query_lower or "deposit" in query_lower or "income" in query_lower:
@@ -135,23 +169,6 @@ class ChatInterface:
         if "debit" in query_lower or "expense" in query_lower or "payment" in query_lower:
             # Don't return all debits, too many - let search narrow it down
             pass
-
-        # Check for time-based queries
-        if "last month" in query_lower:
-            today = datetime.now()
-            start = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
-            end = today.replace(day=1) - timedelta(days=1)
-            return self.db.get_transactions_in_date_range(
-                start.strftime("%Y-%m-%d"),
-                end.strftime("%Y-%m-%d")
-            )
-        if "this month" in query_lower:
-            today = datetime.now()
-            start = today.replace(day=1)
-            return self.db.get_transactions_in_date_range(
-                start.strftime("%Y-%m-%d"),
-                today.strftime("%Y-%m-%d")
-            )
 
         # Extract potential search terms
         search_terms = self._extract_search_terms(query)

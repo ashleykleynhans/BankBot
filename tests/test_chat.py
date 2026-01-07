@@ -134,6 +134,22 @@ class TestFindRelevantTransactions:
 
         mock_db.get_all_transactions.assert_called_with(limit=20)
 
+    def test_find_category_with_date_range(self, chat, mock_db):
+        """Test finding category transactions within a date range."""
+        mock_db.get_transactions_in_date_range.return_value = [
+            {"date": "2025-12-15", "description": "Woolworths", "amount": 500, "category": "groceries"},
+            {"date": "2025-12-20", "description": "Shell Fuel", "amount": 800, "category": "fuel"},
+            {"date": "2025-12-25", "description": "Checkers", "amount": 300, "category": "groceries"},
+        ]
+
+        result = chat._find_relevant_transactions("groceries last month")
+
+        # Should call date range query
+        mock_db.get_transactions_in_date_range.assert_called()
+        # Should filter by category and return only groceries
+        assert len(result) == 2
+        assert all(tx["category"] == "groceries" for tx in result)
+
 
 class TestBuildContext:
     """Tests for context building."""
