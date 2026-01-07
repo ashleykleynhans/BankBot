@@ -1,6 +1,8 @@
 # Bank Statement Chat Bot
 
-A CLI application that parses PDF bank statements, imports them into SQLite, auto-classifies transactions using a local LLM (Ollama), and provides a chat interface to query your transaction history.
+A CLI application that parses PDF bank statements, imports them into SQLite,
+auto-classifies transactions using a local LLM (Ollama), and provides a chat
+interface to query your transaction history.
 
 ## Features
 
@@ -80,6 +82,7 @@ python -m src.main stats
 python -m src.main parsers
 
 # Rename PDFs to standardized format: {number}_{month}_{year}.pdf
+# This ensures statements are imported in chronological order
 python -m src.main rename
 ```
 
@@ -169,6 +172,13 @@ categories:
   - transfer
   - salary
   - other
+
+# Classification rules (override LLM for specific patterns)
+classification_rules:
+  "Woolworths": groceries
+  "Shell": fuel
+  "Engen": fuel
+  "School Fees": education
 ```
 
 ## Project Structure
@@ -189,8 +199,8 @@ statement-chat/
 │       ├── base.py      # Base parser class
 │       ├── fnb.py       # FNB parser
 │       └── __init__.py  # Parser registry
+├── tests/                # Test suite
 ├── config.yaml
-├── requirements.txt
 └── pyproject.toml
 ```
 
