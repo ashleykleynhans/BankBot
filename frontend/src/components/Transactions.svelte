@@ -111,7 +111,7 @@
   }
 </script>
 
-<div class="p-6">
+<div class="p-6 h-full overflow-y-auto">
   <h1 class="text-2xl font-bold mb-6 text-gray-800 dark:text-gray-100">Transactions</h1>
 
   <!-- Filters -->
