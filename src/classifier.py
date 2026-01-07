@@ -16,14 +16,15 @@ class ClassificationResult:
 
 
 class TransactionClassifier:
-    """Classify transactions using a local Ollama LLM."""
+    """Classify transactions using rules first, then Ollama LLM as fallback."""
 
     def __init__(
         self,
         host: str = "localhost",
         port: int = 11434,
         model: str = "llama3.2",
-        categories: list[str] | None = None
+        categories: list[str] | None = None,
+        classification_rules: dict[str, str] | None = None
     ):
         self.host = host
         self.port = port
@@ -32,9 +33,19 @@ class TransactionClassifier:
             "doctor", "optician", "groceries", "garden_service",
             "dog_parlour", "domestic_worker", "education", "fuel",
             "utilities", "insurance", "entertainment", "transfer",
-            "salary", "other"
+            "salary", "cellphone", "home_maintenance", "fees",
+            "deposit", "savings", "eft_payment", "other"
         ]
+        self.classification_rules = classification_rules or {}
         self._client = ollama.Client(host=f"http://{host}:{port}")
+
+    def _check_rules(self, description: str) -> str | None:
+        """Check if description matches any classification rules."""
+        desc_lower = description.lower()
+        for pattern, category in self.classification_rules.items():
+            if pattern.lower() in desc_lower:
+                return category
+        return None
 
     def classify(self, description: str, amount: float) -> ClassificationResult:
         """Classify a single transaction.
@@ -46,6 +57,16 @@ class TransactionClassifier:
         Returns:
             ClassificationResult with category and extracted recipient
         """
+        # First, check rules-based classification
+        rule_category = self._check_rules(description)
+        if rule_category:
+            return ClassificationResult(
+                category=rule_category,
+                recipient_or_payer=None,
+                confidence="high"
+            )
+
+        # Fall back to LLM classification
         transaction_type = "payment/expense" if amount < 0 else "income/deposit"
 
         prompt = f"""Analyze this bank transaction and classify it.

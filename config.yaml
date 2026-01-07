@@ -29,4 +29,35 @@ categories:
   - entertainment
   - transfer
   - salary
+  - cellphone
+  - home_maintenance
+  - fees
+  - deposit
+  - savings
+  - eft_payment
   - other
+
+# Classification rules (checked before LLM, case-insensitive)
+# Format: pattern -> category
+classification_rules:
+  "Vodacom": cellphone
+  "MTN": cellphone
+  "Telkom": cellphone
+  "Cartrack": other
+  "Roof Repair": home_maintenance
+  "Plumber": home_maintenance
+  "Electrician": home_maintenance
+  "Bank fee": fees
+  "Service Fee": fees
+  "Monthly Fee": fees
+  "Magtape Credit": deposit
+  "Payment To Investment": savings
+  "Investment": savings
+  "FNB App Payment To": eft_payment
+  "Internet Pmt To": eft_payment
+  "FNB App Transfer": transfer
+  "Cap Legac": insurance
+  "Old Mutual": insurance
+  "Sanlam": insurance
+  "Discovery": insurance
+  "Liberty": insurance

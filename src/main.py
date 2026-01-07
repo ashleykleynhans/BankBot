@@ -26,7 +26,8 @@ def cmd_import(args: argparse.Namespace, config: dict) -> None:
         host=config["ollama"]["host"],
         port=config["ollama"]["port"],
         model=config["ollama"]["model"],
-        categories=config.get("categories")
+        categories=config.get("categories"),
+        classification_rules=config.get("classification_rules")
     )
 
     # Check Ollama connection
@@ -58,7 +59,8 @@ def cmd_watch(args: argparse.Namespace, config: dict) -> None:
         host=config["ollama"]["host"],
         port=config["ollama"]["port"],
         model=config["ollama"]["model"],
-        categories=config.get("categories")
+        categories=config.get("categories"),
+        classification_rules=config.get("classification_rules")
     )
 
     if not classifier.check_connection():

@@ -12,12 +12,7 @@ from .base import BaseBankParser, StatementData, Transaction
 
 @register_parser
 class FNBParser(BaseBankParser):
-    """Parser for FNB bank statements.
-
-    Note: This parser is designed for standard FNB statement PDFs.
-    The parsing logic may need adjustment based on the specific
-    statement format you receive.
-    """
+    """Parser for FNB bank statements."""
 
     @classmethod
     def bank_name(cls) -> str:
@@ -33,29 +28,21 @@ class FNBParser(BaseBankParser):
         transactions = []
         account_number = None
         statement_date = None
+        full_text = ""
 
         with pdfplumber.open(pdf_path) as pdf:
-            full_text = ""
             for page in pdf.pages:
                 page_text = page.extract_text() or ""
                 full_text += page_text + "\n"
 
-                # Try to extract account number from first page
-                if account_number is None:
-                    account_number = self._extract_account_number(page_text)
+        # Extract account number
+        account_number = self._extract_account_number(full_text)
 
-                # Try to extract statement date
-                if statement_date is None:
-                    statement_date = self._extract_statement_date(page_text)
+        # Extract statement date
+        statement_date = self._extract_statement_date(full_text)
 
-                # Extract transactions from tables if present
-                tables = page.extract_tables()
-                for table in tables:
-                    transactions.extend(self._parse_table(table))
-
-            # If no tables found, try line-by-line parsing
-            if not transactions:
-                transactions = self._parse_text(full_text)
+        # Parse transactions from text
+        transactions = self._parse_transactions(full_text)
 
         return StatementData(
             account_number=account_number,
@@ -66,9 +53,8 @@ class FNBParser(BaseBankParser):
     def _extract_account_number(self, text: str) -> str | None:
         """Extract account number from statement text."""
         patterns = [
-            r"Account\s*(?:Number|No\.?|#)?\s*[:\s]?\s*(\d{10,})",
-            r"Acc(?:ount)?\s*(?:No\.?|#)?\s*[:\s]?\s*(\d{10,})",
-            r"(\d{10,})\s*(?:Cheque|Current|Savings)",
+            r"Account\s*Number\s*[\s:]*(\d{10,})",
+            r"(\d{11})\s+\d{4}/\d{2}/\d{2}",  # FNB format: account date
         ]
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
@@ -78,15 +64,13 @@ class FNBParser(BaseBankParser):
 
     def _extract_statement_date(self, text: str) -> str | None:
         """Extract statement date from text."""
-        patterns = [
-            r"Statement\s*(?:Date|Period)?\s*[:\s]?\s*(\d{1,2}[\s/-]\w+[\s/-]\d{2,4})",
-            r"(?:From|Period):\s*\d{1,2}[\s/-]\w+[\s/-]\d{2,4}\s*(?:to|[-–])\s*(\d{1,2}[\s/-]\w+[\s/-]\d{2,4})",
-            r"(\d{1,2}[\s/-]\w{3,9}[\s/-]\d{2,4})",
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                return self._normalize_date(match.group(1))
+        # Look for "Statement Date : 1 November 2025"
+        match = re.search(
+            r"Statement\s*Date\s*[:\s]+(\d{1,2}\s+\w+\s+\d{4})",
+            text, re.IGNORECASE
+        )
+        if match:
+            return self._normalize_date(match.group(1))
         return None
 
     def _normalize_date(self, date_str: str) -> str | None:
@@ -95,14 +79,10 @@ class FNBParser(BaseBankParser):
             "%d %B %Y",
             "%d %b %Y",
             "%d/%m/%Y",
-            "%d-%m-%Y",
-            "%d %B %y",
-            "%d %b %y",
-            "%d/%m/%y",
-            "%d-%m-%y",
+            "%Y/%m/%d",
         ]
 
-        date_str = date_str.strip().replace("  ", " ")
+        date_str = date_str.strip()
 
         for fmt in date_formats:
             try:
@@ -112,174 +92,147 @@ class FNBParser(BaseBankParser):
                 continue
         return date_str
 
-    def _parse_table(self, table: list[list]) -> list[Transaction]:
-        """Parse transactions from a table structure."""
+    def _parse_transactions(self, text: str) -> list[Transaction]:
+        """Parse transactions from FNB statement text."""
         transactions = []
 
-        if not table or len(table) < 2:
-            return transactions
+        # FNB transaction line pattern:
+        # DD Mon Description Amount Balance [BankCharges]
+        # Amount can be like: 720.00 or 5,200.00Cr
+        # Balance is like: 18,196.65Cr or 4,416.75Dr
 
-        # Try to identify column indices
-        header = table[0] if table[0] else []
-        header_lower = [str(h).lower() if h else "" for h in header]
-
-        date_col = self._find_column(header_lower, ["date", "trans date", "transaction date"])
-        desc_col = self._find_column(header_lower, ["description", "details", "particulars", "transaction"])
-        amount_col = self._find_column(header_lower, ["amount", "debit", "credit"])
-        balance_col = self._find_column(header_lower, ["balance", "running balance"])
-        ref_col = self._find_column(header_lower, ["reference", "ref", "ref no"])
-
-        # If we couldn't identify columns, try positional parsing
-        if date_col is None:
-            return self._parse_table_positional(table)
-
-        for row in table[1:]:
-            if not row or len(row) <= max(filter(None, [date_col, desc_col, amount_col])):
-                continue
-
-            try:
-                date_str = str(row[date_col]).strip() if date_col is not None and row[date_col] else ""
-                if not date_str or not self._looks_like_date(date_str):
-                    continue
-
-                date = self._normalize_date(date_str)
-                description = str(row[desc_col]).strip() if desc_col is not None and row[desc_col] else ""
-                amount_str = str(row[amount_col]).strip() if amount_col is not None and row[amount_col] else "0"
-                balance_str = str(row[balance_col]).strip() if balance_col is not None and balance_col < len(row) and row[balance_col] else None
-                reference = str(row[ref_col]).strip() if ref_col is not None and ref_col < len(row) and row[ref_col] else None
-
-                amount = self._parse_amount(amount_str)
-                balance = self._parse_amount(balance_str) if balance_str else None
-
-                if date and description:
-                    transactions.append(Transaction(
-                        date=date,
-                        description=description,
-                        amount=amount,
-                        balance=balance,
-                        reference=reference,
-                        raw_text=" | ".join(str(c) for c in row if c)
-                    ))
-            except (IndexError, ValueError):
-                continue
-
-        return transactions
-
-    def _parse_table_positional(self, table: list[list]) -> list[Transaction]:
-        """Parse table assuming standard column positions."""
-        transactions = []
-
-        for row in table[1:]:  # Skip header
-            if not row or len(row) < 3:
-                continue
-
-            # Common FNB format: Date | Description | Amount | Balance
-            try:
-                date_str = str(row[0]).strip() if row[0] else ""
-                if not self._looks_like_date(date_str):
-                    continue
-
-                date = self._normalize_date(date_str)
-                description = str(row[1]).strip() if len(row) > 1 and row[1] else ""
-                amount_str = str(row[2]).strip() if len(row) > 2 and row[2] else "0"
-                balance_str = str(row[3]).strip() if len(row) > 3 and row[3] else None
-
-                amount = self._parse_amount(amount_str)
-                balance = self._parse_amount(balance_str) if balance_str else None
-
-                if date and description:
-                    transactions.append(Transaction(
-                        date=date,
-                        description=description,
-                        amount=amount,
-                        balance=balance,
-                        raw_text=" | ".join(str(c) for c in row if c)
-                    ))
-            except (IndexError, ValueError):
-                continue
-
-        return transactions
-
-    def _parse_text(self, text: str) -> list[Transaction]:
-        """Parse transactions from plain text (fallback method)."""
-        transactions = []
+        # Split into lines
         lines = text.split("\n")
 
-        # Pattern for typical transaction line
-        # Date followed by description and amounts
-        pattern = re.compile(
-            r"(\d{1,2}[\s/-]\w{3,9}[\s/-]?\d{0,4})\s+"  # Date
-            r"(.+?)\s+"  # Description
-            r"(-?[\d\s,]+\.\d{2})"  # Amount
-            r"(?:\s+(-?[\d\s,]+\.\d{2}))?"  # Optional balance
-        )
+        # Find the transactions section (after "Transactions in RAND")
+        in_transactions = False
+        current_year = None
+
+        # Try to extract year from statement
+        year_match = re.search(r"Statement\s*(?:Date|Period).*?(\d{4})", text)
+        if year_match:
+            current_year = int(year_match.group(1))
+        else:
+            current_year = datetime.now().year
 
         for line in lines:
             line = line.strip()
-            match = pattern.match(line)
-            if match:
-                date_str, description, amount_str, balance_str = match.groups()
 
-                date = self._normalize_date(date_str)
-                amount = self._parse_amount(amount_str)
-                balance = self._parse_amount(balance_str) if balance_str else None
+            # Skip empty lines
+            if not line:
+                continue
 
-                if date and description:
-                    transactions.append(Transaction(
-                        date=date,
-                        description=description.strip(),
-                        amount=amount,
-                        balance=balance,
-                        raw_text=line
-                    ))
+            # Detect start of transactions section
+            if "Transactions in RAND" in line:
+                in_transactions = True
+                continue
+
+            # Skip header line
+            if line.startswith("Date") and "Description" in line:
+                continue
+
+            if not in_transactions:
+                continue
+
+            # Stop at footer sections
+            if any(x in line for x in ["*Indicates", "**Interest", "Important information", "Page "]):
+                continue
+
+            # Try to parse transaction line
+            tx = self._parse_transaction_line(line, current_year)
+            if tx:
+                transactions.append(tx)
 
         return transactions
 
-    def _find_column(self, headers: list[str], keywords: list[str]) -> int | None:
-        """Find column index matching any of the keywords."""
-        for i, header in enumerate(headers):
-            for keyword in keywords:
-                if keyword in header:
-                    return i
-        return None
+    def _parse_transaction_line(self, line: str, year: int) -> Transaction | None:
+        """Parse a single transaction line."""
+        # Pattern: DD Mon [Description] Amount Balance [BankCharges]
+        # Examples:
+        # "30 Sep 3.00 19,125.65Cr"
+        # "02 Oct Internet Pmt To Keanu... 720.00 18,196.65Cr"
+        # "06 Oct FNB App Payment From Mom 5,200.00Cr 16,446.75Cr"
 
-    def _looks_like_date(self, text: str) -> bool:
-        """Check if text looks like a date."""
-        if not text:
-            return False
-        # Check for common date patterns
-        patterns = [
-            r"\d{1,2}[\s/-]\w{3,9}",  # 01 Jan or 01/Jan
-            r"\d{1,2}[\s/-]\d{1,2}[\s/-]\d{2,4}",  # 01/01/2024
-        ]
-        return any(re.match(p, text, re.IGNORECASE) for p in patterns)
+        # Match date at start
+        date_match = re.match(r"^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b", line, re.IGNORECASE)
+        if not date_match:
+            return None
 
-    def _parse_amount(self, amount_str: str) -> float:
-        """Parse amount string to float, handling various formats."""
-        if not amount_str:
-            return 0.0
+        day = date_match.group(1)
+        month = date_match.group(2)
 
-        # Remove currency symbols, spaces, and normalize
-        cleaned = re.sub(r"[R$€£\s]", "", str(amount_str))
-        # Handle negative indicators
-        is_negative = False
-        if cleaned.startswith("(") and cleaned.endswith(")"):
-            is_negative = True
-            cleaned = cleaned[1:-1]
-        if cleaned.startswith("-"):
-            is_negative = True
-            cleaned = cleaned[1:]
-        if "CR" in cleaned.upper():
-            cleaned = re.sub(r"CR", "", cleaned, flags=re.IGNORECASE)
-        if "DR" in cleaned.upper():
-            is_negative = True
-            cleaned = re.sub(r"DR", "", cleaned, flags=re.IGNORECASE)
-
-        # Remove thousand separators (handle both , and space)
-        cleaned = cleaned.replace(",", "").replace(" ", "")
-
+        # Parse the date
         try:
-            amount = float(cleaned)
-            return -amount if is_negative else amount
+            date_str = f"{day} {month} {year}"
+            dt = datetime.strptime(date_str, "%d %b %Y")
+            date = dt.strftime("%Y-%m-%d")
         except ValueError:
-            return 0.0
+            return None
+
+        # Rest of the line after date
+        rest = line[date_match.end():].strip()
+
+        # Find amounts at the end - looking for patterns like:
+        # "720.00 18,196.65Cr" or "5,200.00Cr 16,446.75Cr"
+        # Amount pattern: optional minus, digits with optional comma separators, decimal point, 2 digits, optional Cr/Dr
+        amount_pattern = r"([\d,]+\.\d{2})(Cr|Dr)?"
+
+        # Find all amounts in the line
+        amounts = list(re.finditer(amount_pattern, rest))
+
+        if len(amounts) < 1:
+            return None
+
+        # The last amount is usually the balance
+        # The second-to-last (or last if only one) is the transaction amount
+        if len(amounts) >= 2:
+            amount_match = amounts[-2]
+            balance_match = amounts[-1]
+        else:
+            # Only one amount - could be balance only (for fee lines) or amount only
+            # Try to determine from context
+            amount_match = amounts[-1]
+            balance_match = None
+
+        # Extract description (everything between date and first amount)
+        desc_end = amounts[0].start() if amounts else len(rest)
+        description = rest[:desc_end].strip()
+
+        # If no description, it might be a fee line or continuation
+        if not description and len(amounts) >= 2:
+            # This might be a fee line with just amounts
+            description = "Bank fee/charge"
+
+        # Parse the amount
+        amount_str = amount_match.group(1).replace(",", "")
+        amount = float(amount_str)
+
+        # Determine if credit or debit
+        # Cr suffix = credit (money in), no suffix or Dr = debit (money out)
+        amount_suffix = amount_match.group(2)
+        if amount_suffix == "Cr":
+            # Credit - positive amount
+            pass
+        else:
+            # Debit - negative amount
+            amount = -amount
+
+        # Parse balance if present
+        balance = None
+        if balance_match:
+            balance_str = balance_match.group(1).replace(",", "")
+            balance = float(balance_str)
+            if balance_match.group(2) == "Dr":
+                balance = -balance
+
+        if not description:
+            return None
+
+        return Transaction(
+            date=date,
+            description=description,
+            amount=amount,
+            balance=balance,
+            reference=None,
+            raw_text=line
+        )
