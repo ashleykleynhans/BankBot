@@ -9,6 +9,7 @@ interface to query your transaction history.
 - **PDF Parsing**: Extract transactions from bank statement PDFs
 - **Auto-Classification**: Uses Ollama to categorize transactions (doctor, groceries, utilities, etc.)
 - **Chat Interface**: Ask natural language questions about your spending
+- **REST + WebSocket API**: Integrate with frontend applications
 - **File Watcher**: Automatically imports new statements when added
 - **Extensible**: Easy to add support for new banks
 
@@ -84,6 +85,10 @@ python -m src.main parsers
 # Rename PDFs to standardized format: {number}_{month}_{year}.pdf
 # This ensures statements are imported in chronological order
 python -m src.main rename
+
+# Start API server (REST + WebSocket)
+python -m src.main serve
+python -m src.main serve --host 0.0.0.0 --port 3000
 ```
 
 ## Re-importing Statements
@@ -181,6 +186,47 @@ classification_rules:
   "School Fees": education
 ```
 
+## API
+
+Start the API server with `python -m src.main serve`. Interactive docs available at `http://localhost:8000/docs`.
+
+### REST Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+| GET | `/api/v1/stats` | Database statistics |
+| GET | `/api/v1/categories` | List all categories |
+| GET | `/api/v1/categories/summary` | Spending by category |
+| GET | `/api/v1/transactions` | Paginated list (`?limit=20&offset=0`) |
+| GET | `/api/v1/transactions/search?q=term` | Search transactions |
+| GET | `/api/v1/transactions/category/{cat}` | Filter by category |
+| GET | `/api/v1/transactions/type/{type}` | Filter by debit/credit |
+| GET | `/api/v1/transactions/date-range?start=&end=` | Date range filter |
+
+### WebSocket Chat
+
+Connect to `ws://localhost:8000/ws/chat` for real-time chat.
+
+**Send:**
+```json
+{"type": "chat", "payload": {"message": "How much did I spend on groceries?"}}
+```
+
+**Receive:**
+```json
+{
+  "type": "chat_response",
+  "payload": {
+    "message": "You spent R2,450 on groceries...",
+    "transactions": [...],
+    "timestamp": "2025-01-07T10:30:00"
+  }
+}
+```
+
+Each WebSocket connection maintains its own conversation history for follow-up questions.
+
 ## Project Structure
 
 ```
@@ -195,6 +241,11 @@ statement-chat/
 │   ├── chat.py          # Chat interface
 │   ├── watcher.py       # File watcher
 │   ├── config.py        # Config loader
+│   ├── api/             # REST + WebSocket API
+│   │   ├── app.py       # FastAPI application
+│   │   ├── models.py    # Pydantic schemas
+│   │   ├── session.py   # WebSocket session management
+│   │   └── routers/     # API route handlers
 │   └── parsers/
 │       ├── base.py      # Base parser class
 │       ├── fnb.py       # FNB parser

@@ -9,7 +9,7 @@ from io import StringIO
 from src import main
 from src.main import (
     cmd_import, cmd_watch, cmd_chat, cmd_list,
-    cmd_categories, cmd_stats, cmd_search, cmd_parsers, cmd_rename
+    cmd_categories, cmd_stats, cmd_search, cmd_parsers, cmd_rename, cmd_serve
 )
 
 
@@ -623,3 +623,65 @@ class TestCmdRename:
 
         # File should still exist
         assert pdf_file.exists()
+
+
+class TestCmdServe:
+    """Tests for cmd_serve function."""
+
+    def test_serve_starts_server(self, mock_config):
+        """Test serve starts uvicorn server."""
+        args = argparse.Namespace(host="127.0.0.1", port=8000)
+
+        with patch('uvicorn.run') as mock_run:
+            with patch('src.main.console'):
+                cmd_serve(args, mock_config)
+
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args
+            assert call_args.kwargs["host"] == "127.0.0.1"
+            assert call_args.kwargs["port"] == 8000
+
+    def test_serve_custom_host_port(self, mock_config):
+        """Test serve with custom host and port."""
+        args = argparse.Namespace(host="0.0.0.0", port=3000)
+
+        with patch('uvicorn.run') as mock_run:
+            with patch('src.main.console'):
+                cmd_serve(args, mock_config)
+
+            call_args = mock_run.call_args
+            assert call_args.kwargs["host"] == "0.0.0.0"
+            assert call_args.kwargs["port"] == 3000
+
+    @patch('src.main.get_config')
+    @patch('src.main.cmd_serve')
+    def test_main_serve_command(self, mock_cmd, mock_config):
+        """Test main with serve command."""
+        mock_config.return_value = {
+            "bank": "fnb",
+            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "paths": {"database": "test.db", "statements_dir": "./statements"},
+        }
+
+        with patch.object(sys, 'argv', ['prog', 'serve']):
+            main.main()
+
+        mock_cmd.assert_called_once()
+
+    @patch('src.main.get_config')
+    @patch('src.main.cmd_serve')
+    def test_main_serve_with_options(self, mock_cmd, mock_config):
+        """Test main with serve command and options."""
+        mock_config.return_value = {
+            "bank": "fnb",
+            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "paths": {"database": "test.db", "statements_dir": "./statements"},
+        }
+
+        with patch.object(sys, 'argv', ['prog', 'serve', '--host', '0.0.0.0', '--port', '3000']):
+            main.main()
+
+        mock_cmd.assert_called_once()
+        args = mock_cmd.call_args[0][0]
+        assert args.host == "0.0.0.0"
+        assert args.port == 3000

@@ -309,6 +309,24 @@ def cmd_rename(args: argparse.Namespace, config: dict) -> None:
     console.print(f"\n[bold]Summary: {renamed} renamed, {skipped} skipped, {errors} errors[/bold]")
 
 
+def cmd_serve(args: argparse.Namespace, config: dict) -> None:
+    """Start the API server."""
+    import uvicorn
+
+    from .api.app import app
+
+    host = args.host
+    port = args.port
+
+    console.print(f"[bold green]Starting API server...[/bold green]")
+    console.print(f"[dim]WebSocket: ws://{host}:{port}/ws/chat[/dim]")
+    console.print(f"[dim]REST API:  http://{host}:{port}/api/v1/...[/dim]")
+    console.print(f"[dim]API Docs:  http://{host}:{port}/docs[/dim]")
+    console.print()
+
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -362,6 +380,11 @@ Examples:
     # Rename command
     subparsers.add_parser("rename", help="Rename PDFs to {number}_{month}_{year}.pdf format")
 
+    # Serve command
+    serve_parser = subparsers.add_parser("serve", help="Start API server")
+    serve_parser.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
+    serve_parser.add_argument("--port", type=int, default=8000, help="Port to bind to (default: 8000)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -387,6 +410,7 @@ Examples:
         "search": cmd_search,
         "parsers": cmd_parsers,
         "rename": cmd_rename,
+        "serve": cmd_serve,
     }
 
     cmd_func = commands.get(args.command)
