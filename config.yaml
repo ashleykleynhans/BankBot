@@ -16,7 +16,7 @@ paths:
 
 # Classification categories (customizable)
 categories:
-  - doctor
+  - medical
   - optician
   - groceries
   - garden_service
@@ -39,23 +39,42 @@ categories:
 
 # Classification rules (checked before LLM, case-insensitive)
 # Format: pattern -> category
+# Note: More specific rules should come before general ones
 classification_rules:
+  # Medical (check before eft_payment)
+  " Dr ": medical
+  "Doctor": medical
+  "Pharmacy": medical
+  "Dentist": medical
+  "Optom": medical
+
+  # Cellphone
   "Vodacom": cellphone
   "MTN": cellphone
   "Telkom": cellphone
+
+  # Home & Vehicle
   "Cartrack": other
   "Roof Repair": home_maintenance
   "Plumber": home_maintenance
   "Electrician": home_maintenance
+
+  # Fees
   "Bank fee": fees
   "Service Fee": fees
   "Monthly Fee": fees
+
+  # Deposits & Savings
   "Magtape Credit": deposit
   "Payment To Investment": savings
   "Investment": savings
+
+  # Transfers & Payments (general - keep last)
   "FNB App Payment To": eft_payment
   "Internet Pmt To": eft_payment
   "FNB App Transfer": transfer
+
+  # Insurance
   "Cap Legac": insurance
   "Old Mutual": insurance
   "Sanlam": insurance
