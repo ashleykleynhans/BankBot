@@ -354,3 +354,37 @@ class TestImportExisting:
         call_args = mock_db.insert_transactions_batch.call_args[0]
         transactions = call_args[1]
         assert transactions[0]["transaction_type"] == "credit"
+
+    def test_import_sorts_by_statement_number(self, mock_db, mock_classifier, tmp_path):
+        """Test import processes files in statement number order."""
+        mock_parser = Mock()
+        mock_parser.parse.return_value = StatementData(
+            account_number="123",
+            statement_date="2025-01-01",
+            transactions=[]
+        )
+
+        # Create files out of order
+        (tmp_path / "287_Oct_2025.pdf").touch()
+        (tmp_path / "262_Sep_2023.pdf").touch()
+        (tmp_path / "290_Jan_2026.pdf").touch()
+        (tmp_path / "old_format.pdf").touch()  # Non-matching format
+
+        processed_files = []
+
+        def track_statement(filename, **kwargs):
+            processed_files.append(filename)
+            return 1
+
+        mock_db.insert_statement.side_effect = track_statement
+
+        with patch('src.watcher.get_parser', return_value=mock_parser):
+            import_existing(tmp_path, mock_db, "fnb", mock_classifier)
+
+        # Files should be processed in statement number order, non-matching last
+        assert processed_files == [
+            "262_Sep_2023.pdf",
+            "287_Oct_2025.pdf",
+            "290_Jan_2026.pdf",
+            "old_format.pdf",
+        ]

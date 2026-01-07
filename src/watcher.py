@@ -1,5 +1,6 @@
 """Directory watcher for automatic statement import."""
 
+import re
 import time
 from pathlib import Path
 
@@ -172,6 +173,15 @@ def import_existing(
 
     parser = get_parser(bank)
     pdf_files = list(statements_dir.glob("*.pdf")) + list(statements_dir.glob("*.PDF"))
+
+    # Sort by statement number if filename matches format: {number}_{month}_{year}.pdf
+    def sort_key(path: Path) -> tuple:
+        match = re.match(r"^(\d+)_", path.name)
+        if match:
+            return (0, int(match.group(1)), path.name)
+        return (1, 0, path.name)  # Non-matching files come after
+
+    pdf_files = sorted(pdf_files, key=sort_key)
 
     if not pdf_files:
         console.print(f"[yellow]No PDF files found in {statements_dir}[/yellow]")
