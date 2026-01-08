@@ -11,12 +11,13 @@ def classifier():
     """Create a classifier with test categories."""
     with patch('src.classifier.ollama.Client'):
         return TransactionClassifier(
-            categories=["groceries", "fuel", "medical", "salary", "other"],
+            categories=["groceries", "fuel", "medical", "salary", "subscriptions", "other"],
             classification_rules={
                 "Woolworths": "groceries",
                 "Shell": "fuel",
                 "Dr ": "medical",
                 "Salary": "salary",
+                "Google One": "subscriptions",  # Multi-word pattern
             }
         )
 
@@ -73,6 +74,17 @@ class TestRulesBasedClassification:
         # " Dr " should match " Dr Smith"
         result = classifier._check_rules("Payment Dr Smith Medical")
         assert result == "medical"
+
+    def test_multiword_pattern_matches_without_spaces(self, classifier):
+        """Test multi-word patterns match when description has no spaces (PDF extraction)."""
+        # "Google One" pattern should match "GoogleOne" in description
+        result = classifier._check_rules("POSPurchaseGoogleOne12345")
+        assert result == "subscriptions"
+
+    def test_multiword_pattern_matches_with_spaces(self, classifier):
+        """Test multi-word patterns match normally with spaces."""
+        result = classifier._check_rules("POS Purchase Google One 12345")
+        assert result == "subscriptions"
 
 
 class TestLLMClassification:

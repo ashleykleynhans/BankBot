@@ -42,9 +42,10 @@ class TransactionClassifier:
     def _check_rules(self, description: str) -> str | None:
         """Check if description matches any classification rules.
 
-        Matches work with or without spaces to handle PDF extraction variations,
-        but patterns with leading/trailing spaces (like ' Dr ') are treated as
-        word boundaries and matched literally.
+        Patterns with spaces can match with or without spaces (for PDF extraction).
+        Single-word patterns only match literally to avoid false positives
+        (e.g., "Spur" should not match "pospurchase").
+        Patterns with leading/trailing spaces are word boundary matches.
         """
         desc_lower = description.lower()
         desc_no_spaces = desc_lower.replace(" ", "")
@@ -60,10 +61,14 @@ class TransactionClassifier:
                 # Only match with spaces preserved (word boundary matching)
                 if pattern_lower in desc_lower:
                     return category
-            else:
-                # Match both with and without spaces (PDF extraction flexibility)
+            elif ' ' in pattern:
+                # Multi-word pattern: match with or without spaces (PDF flexibility)
                 pattern_no_spaces = pattern_lower.replace(" ", "")
                 if pattern_lower in desc_lower or pattern_no_spaces in desc_no_spaces:
+                    return category
+            else:
+                # Single-word pattern: only match literally (avoid false positives)
+                if pattern_lower in desc_lower:
                     return category
         return None
 

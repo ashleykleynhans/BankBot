@@ -72,6 +72,55 @@ class TestDatabaseInit:
         assert "statements" in table_names
         assert "transactions" in table_names
 
+    def test_migration_adds_statement_number_column(self, tmp_path):
+        """Test migration adds statement_number column to old databases."""
+        import sqlite3
+
+        db_path = tmp_path / "old_schema.db"
+
+        # Create database with old schema (without statement_number)
+        conn = sqlite3.connect(db_path)
+        conn.executescript("""
+            CREATE TABLE statements (
+                id INTEGER PRIMARY KEY,
+                filename TEXT UNIQUE NOT NULL,
+                account_number TEXT,
+                statement_date DATE,
+                imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE transactions (
+                id INTEGER PRIMARY KEY,
+                statement_id INTEGER REFERENCES statements(id),
+                date DATE NOT NULL,
+                description TEXT NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                balance DECIMAL(10,2),
+                transaction_type TEXT,
+                category TEXT,
+                recipient_or_payer TEXT,
+                reference TEXT,
+                raw_text TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.close()
+
+        # Verify old schema doesn't have statement_number
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(statements)")
+        columns = [row[1] for row in cursor.fetchall()]
+        assert "statement_number" not in columns
+        conn.close()
+
+        # Create Database instance - should trigger migration
+        db = Database(db_path)
+
+        # Verify migration added the column
+        conn = db._get_connection()
+        cursor = conn.execute("PRAGMA table_info(statements)")
+        columns = [row[1] for row in cursor.fetchall()]
+        assert "statement_number" in columns
+
 
 class TestStatements:
     """Tests for statement operations."""

@@ -60,6 +60,24 @@ class TestStatementDateExtraction:
         result = parser._extract_statement_date(text)
         assert result is None
 
+    def test_extract_statement_number(self, parser):
+        """Test extracting statement number."""
+        text = "Tax Invoice/Statement Number : 269"
+        result = parser._extract_statement_number(text)
+        assert result == "269"
+
+    def test_extract_statement_number_without_tax_invoice(self, parser):
+        """Test extracting statement number without Tax Invoice prefix."""
+        text = "Statement Number : 287"
+        result = parser._extract_statement_number(text)
+        assert result == "287"
+
+    def test_extract_statement_number_not_found(self, parser):
+        """Test when statement number not found."""
+        text = "Some random text"
+        result = parser._extract_statement_number(text)
+        assert result is None
+
 
 class TestDateNormalization:
     """Tests for date normalization."""
