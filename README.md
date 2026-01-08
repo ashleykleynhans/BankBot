@@ -18,7 +18,7 @@ interface to query your transaction history.
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 - Node.js 18+ (for frontend)
 - [Ollama](https://ollama.ai/) running locally
 
