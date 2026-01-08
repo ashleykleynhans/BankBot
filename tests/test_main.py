@@ -40,6 +40,8 @@ def mock_args():
         config="config.yaml",
         limit=None,
         term=None,
+        path=None,
+        bank=None,
     )
 
 
@@ -69,6 +71,37 @@ class TestCmdImport:
             cmd_import(mock_args, mock_config)
 
         assert exc.value.code == 1
+
+    @patch('src.main.import_existing')
+    @patch('src.main.TransactionClassifier')
+    @patch('src.main.Database')
+    def test_import_with_path_override(self, mock_db, mock_classifier, mock_import, mock_config):
+        """Test import with --path override."""
+        mock_classifier.return_value.check_connection.return_value = True
+        mock_import.return_value = 3
+
+        args = argparse.Namespace(path="/custom/path", bank=None)
+        cmd_import(args, mock_config)
+
+        # Should use custom path instead of config
+        call_kwargs = mock_import.call_args.kwargs
+        assert call_kwargs["statements_dir"] == "/custom/path"
+        assert call_kwargs["bank"] == "fnb"  # Falls back to config
+
+    @patch('src.main.import_existing')
+    @patch('src.main.TransactionClassifier')
+    @patch('src.main.Database')
+    def test_import_with_bank_override(self, mock_db, mock_classifier, mock_import, mock_config):
+        """Test import with --bank override."""
+        mock_classifier.return_value.check_connection.return_value = True
+        mock_import.return_value = 2
+
+        args = argparse.Namespace(path=None, bank="standardbank")
+        cmd_import(args, mock_config)
+
+        call_kwargs = mock_import.call_args.kwargs
+        assert call_kwargs["statements_dir"] == "./statements"  # Falls back to config
+        assert call_kwargs["bank"] == "standardbank"
 
 
 class TestCmdWatch:

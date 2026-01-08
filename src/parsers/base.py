@@ -21,6 +21,7 @@ class StatementData:
     """Parsed data from a bank statement."""
     account_number: str | None = None
     statement_date: str | None = None
+    statement_number: str | None = None
     transactions: list[Transaction] = field(default_factory=list)
 
 

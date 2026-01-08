@@ -64,7 +64,8 @@ class StatementHandler(FileSystemEventHandler):
             statement_id = self.db.insert_statement(
                 filename=filename,
                 account_number=statement_data.account_number,
-                statement_date=statement_data.statement_date
+                statement_date=statement_data.statement_date,
+                statement_number=statement_data.statement_number
             )
 
             # Process and classify transactions
@@ -203,7 +204,8 @@ def import_existing(
             statement_id = db.insert_statement(
                 filename=filename,
                 account_number=statement_data.account_number,
-                statement_date=statement_data.statement_date
+                statement_date=statement_data.statement_date,
+                statement_number=statement_data.statement_number
             )
 
             transactions_to_insert = []

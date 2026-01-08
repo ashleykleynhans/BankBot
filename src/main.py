@@ -24,6 +24,10 @@ console = Console()
 
 def cmd_import(args: argparse.Namespace, config: dict) -> None:
     """Import all PDF statements from the statements directory."""
+    # Allow command-line overrides
+    statements_dir = args.path if args.path else config["paths"]["statements_dir"]
+    bank = args.bank if args.bank else config["bank"]
+
     db = Database(config["paths"]["database"])
     classifier = TransactionClassifier(
         host=config["ollama"]["host"],
@@ -45,10 +49,13 @@ def cmd_import(args: argparse.Namespace, config: dict) -> None:
         console.print("[dim]Start Ollama with: ollama serve[/dim]")
         sys.exit(1)
 
+    console.print(f"[dim]Importing from: {statements_dir}[/dim]")
+    console.print(f"[dim]Using parser: {bank}[/dim]\n")
+
     count = import_existing(
-        statements_dir=config["paths"]["statements_dir"],
+        statements_dir=statements_dir,
         db=db,
-        bank=config["bank"],
+        bank=bank,
         classifier=classifier
     )
 
@@ -352,7 +359,9 @@ Examples:
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # Import command
-    subparsers.add_parser("import", help="Import PDF statements")
+    import_parser = subparsers.add_parser("import", help="Import PDF statements")
+    import_parser.add_argument("--path", help="Path to statements directory (overrides config)")
+    import_parser.add_argument("--bank", help="Bank parser to use (overrides config)")
 
     # Watch command
     subparsers.add_parser("watch", help="Watch for new statements")

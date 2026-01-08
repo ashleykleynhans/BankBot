@@ -14,33 +14,30 @@
     .filter((c) => c.total_debits > 0)
     .sort((a, b) => b.total_debits - a.total_debits);
 
-  // Color palette matching Transactions.svelte
-  const categoryColors = [
-    { gradient: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', shadow: '0 4px 14px rgba(59, 130, 246, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #10b981, #059669)', shadow: '0 4px 14px rgba(16, 185, 129, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #f43f5e, #e11d48)', shadow: '0 4px 14px rgba(244, 63, 94, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #f59e0b, #d97706)', shadow: '0 4px 14px rgba(245, 158, 11, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #8b5cf6, #6d28d9)', shadow: '0 4px 14px rgba(139, 92, 246, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #06b6d4, #0891b2)', shadow: '0 4px 14px rgba(6, 182, 212, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #ec4899, #db2777)', shadow: '0 4px 14px rgba(236, 72, 153, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #84cc16, #65a30d)', shadow: '0 4px 14px rgba(132, 204, 22, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #f97316, #ea580c)', shadow: '0 4px 14px rgba(249, 115, 22, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #6366f1, #4f46e5)', shadow: '0 4px 14px rgba(99, 102, 241, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #14b8a6, #0d9488)', shadow: '0 4px 14px rgba(20, 184, 166, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #d946ef, #a21caf)', shadow: '0 4px 14px rgba(217, 70, 239, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #ef4444, #dc2626)', shadow: '0 4px 14px rgba(239, 68, 68, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #22c55e, #16a34a)', shadow: '0 4px 14px rgba(34, 197, 94, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #a855f7, #9333ea)', shadow: '0 4px 14px rgba(168, 85, 247, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #eab308, #ca8a04)', shadow: '0 4px 14px rgba(234, 179, 8, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #0ea5e9, #0284c7)', shadow: '0 4px 14px rgba(14, 165, 233, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #f472b6, #ec4899)', shadow: '0 4px 14px rgba(244, 114, 182, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #2dd4bf, #14b8a6)', shadow: '0 4px 14px rgba(45, 212, 191, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #818cf8, #6366f1)', shadow: '0 4px 14px rgba(129, 140, 248, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #fb923c, #f97316)', shadow: '0 4px 14px rgba(251, 146, 60, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #4ade80, #22c55e)', shadow: '0 4px 14px rgba(74, 222, 128, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #c084fc, #a855f7)', shadow: '0 4px 14px rgba(192, 132, 252, 0.4)' },
-    { gradient: 'linear-gradient(135deg, #38bdf8, #0ea5e9)', shadow: '0 4px 14px rgba(56, 189, 248, 0.4)' },
-  ];
+  // Generate unique colors using HSL with golden angle distribution
+  function hslToRgb(h, s, l) {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = l - c / 2;
+    let r, g, b;
+    if (h < 60) { r = c; g = x; b = 0; }
+    else if (h < 120) { r = x; g = c; b = 0; }
+    else if (h < 180) { r = 0; g = c; b = x; }
+    else if (h < 240) { r = 0; g = x; b = c; }
+    else if (h < 300) { r = x; g = 0; b = c; }
+    else { r = c; g = 0; b = x; }
+    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+  }
+
+  function generateCategoryColor(index) {
+    const goldenAngle = 137.508;
+    const hue = (index * goldenAngle) % 360;
+    const [r1, g1, b1] = hslToRgb(hue, 0.7, 0.5);
+    const [r2, g2, b2] = hslToRgb(hue, 0.7, 0.35);
+    return {
+      gradient: `linear-gradient(135deg, rgb(${r1},${g1},${b1}), rgb(${r2},${g2},${b2}))`
+    };
+  }
 
   let categoryColorMap = new Map();
 
@@ -48,14 +45,14 @@
     categoryColorMap = new Map();
     const allCats = categories.map(c => c.category).filter(Boolean).sort();
     allCats.forEach((cat, index) => {
-      categoryColorMap.set(cat, index % categoryColors.length);
+      categoryColorMap.set(cat, generateCategoryColor(index));
     });
   }
 
   function getBarStyle(category) {
     if (!category) return { background: '#4b5563' };
-    const index = categoryColorMap.get(category) ?? 0;
-    return { background: categoryColors[index].gradient };
+    const color = categoryColorMap.get(category);
+    return { background: color?.gradient || '#4b5563' };
   }
 
   function formatCategoryName(category) {

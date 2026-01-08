@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { getStats, getCategorySummary } from '../lib/api.js';
-  import { formatCurrency, currentPage, filterCategory } from '../lib/stores.js';
+  import { formatCurrency, currentPage, filterCategory, filterSource } from '../lib/stores.js';
   import CategoryChart from './CategoryChart.svelte';
 
   let stats = null;
@@ -25,6 +25,7 @@
   function handleCategorySelect(event) {
     const { category } = event.detail;
     filterCategory.set(category);
+    filterSource.set('dashboard');
     currentPage.set('transactions');
   }
 </script>

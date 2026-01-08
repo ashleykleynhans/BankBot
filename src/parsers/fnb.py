@@ -41,12 +41,16 @@ class FNBParser(BaseBankParser):
         # Extract statement date
         statement_date = self._extract_statement_date(full_text)
 
+        # Extract statement number
+        statement_number = self._extract_statement_number(full_text)
+
         # Parse transactions from text
         transactions = self._parse_transactions(full_text)
 
         return StatementData(
             account_number=account_number,
             statement_date=statement_date,
+            statement_number=statement_number,
             transactions=transactions
         )
 
@@ -71,6 +75,17 @@ class FNBParser(BaseBankParser):
         )
         if match:
             return self._normalize_date(match.group(1))
+        return None
+
+    def _extract_statement_number(self, text: str) -> str | None:
+        """Extract statement number from text."""
+        # Look for "Tax Invoice/Statement Number : 269" or "Statement Number : 269"
+        match = re.search(
+            r"(?:Tax\s*Invoice/)?Statement\s*Number\s*[:\s]+(\d+)",
+            text, re.IGNORECASE
+        )
+        if match:
+            return match.group(1)
         return None
 
     def _normalize_date(self, date_str: str) -> str | None:
