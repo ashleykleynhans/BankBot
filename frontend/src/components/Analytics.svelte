@@ -73,11 +73,29 @@
   $: topCategory = pieData.length > 0
     ? pieData.reduce((a, b) => a.value > b.value ? a : b)
     : null;
+
+  // Format header with month and statement number
+  $: headerSubtitle = (() => {
+    if (!analytics) return '';
+    const num = analytics.statement_number || '';
+    const date = analytics.statement_date
+      ? new Date(analytics.statement_date).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })
+      : '';
+    if (num && date) return `Statement #${num} - ${date}`;
+    if (num) return `Statement #${num}`;
+    if (date) return date;
+    return '';
+  })();
 </script>
 
 <div class="p-6 h-full overflow-y-auto">
   <div class="flex items-center justify-between mb-6">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">Analytics</h1>
+    <div>
+      <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">Analytics</h1>
+      {#if headerSubtitle && !loading}
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{headerSubtitle}</p>
+      {/if}
+    </div>
 
     <!-- Statement Selector -->
     {#if statements.length > 0}
