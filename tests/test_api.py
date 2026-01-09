@@ -669,6 +669,50 @@ class TestBudgetEndpoints:
 
         assert response.status_code == 404
 
+    def test_update_budget(self, client, mock_db, mock_config):
+        """Test updating an existing budget."""
+        mock_db.get_budget_by_category.side_effect = [
+            {"id": 1, "category": "groceries", "amount": 5000.00},  # existing check
+            {"id": 1, "category": "groceries", "amount": 7500.00},  # after update
+        ]
+
+        response = client.put(
+            "/api/v1/budgets/groceries",
+            json={"amount": 7500.00}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["category"] == "groceries"
+        assert data["amount"] == 7500.00
+        mock_db.upsert_budget.assert_called_once_with("groceries", 7500.00)
+
+    def test_update_budget_not_found(self, client, mock_db, mock_config):
+        """Test updating a non-existent budget."""
+        mock_db.get_budget_by_category.return_value = None
+
+        response = client.put(
+            "/api/v1/budgets/nonexistent",
+            json={"amount": 5000.00}
+        )
+
+        assert response.status_code == 404
+        assert "No budget found" in response.json()["detail"]
+
+    def test_update_budget_negative_amount(self, client, mock_db, mock_config):
+        """Test updating budget with negative amount."""
+        mock_db.get_budget_by_category.return_value = {
+            "id": 1, "category": "groceries", "amount": 5000.00
+        }
+
+        response = client.put(
+            "/api/v1/budgets/groceries",
+            json={"amount": -100.00}
+        )
+
+        assert response.status_code == 400
+        assert "must be positive" in response.json()["detail"]
+
     def test_get_budget_summary(self, client, mock_db, mock_config):
         """Test getting budget summary with actuals."""
         mock_db.get_all_budgets.return_value = [

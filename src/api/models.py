@@ -91,9 +91,15 @@ class ChatResponse(BaseModel):
 
 # Budget models
 class BudgetCreate(BaseModel):
-    """Request to create/update a budget."""
+    """Request to create a budget."""
 
     category: str
+    amount: float
+
+
+class BudgetUpdate(BaseModel):
+    """Request to update a budget."""
+
     amount: float
 
 

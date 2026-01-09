@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { getBudgets, getBudgetSummary, createBudget, deleteBudget, getCategories } from '../lib/api.js';
+  import { getBudgets, getBudgetSummary, createBudget, updateBudget, deleteBudget, getCategories } from '../lib/api.js';
   import { formatCurrency } from '../lib/stores.js';
 
   let budgets = [];
@@ -13,6 +13,10 @@
   // Form state
   let selectedCategory = '';
   let budgetAmount = '';
+
+  // Edit state
+  let editingCategory = null;
+  let editAmount = '';
 
   onMount(async () => {
     await loadData();
@@ -66,6 +70,34 @@
     }
   }
 
+  function startEdit(category, currentAmount) {
+    editingCategory = category;
+    editAmount = currentAmount.toString();
+  }
+
+  function cancelEdit() {
+    editingCategory = null;
+    editAmount = '';
+  }
+
+  async function handleEdit() {
+    if (!editingCategory || !editAmount) return;
+
+    saving = true;
+    error = null;
+
+    try {
+      await updateBudget(editingCategory, parseFloat(editAmount));
+      editingCategory = null;
+      editAmount = '';
+      await loadData();
+    } catch (err) {
+      error = err.message;
+    } finally {
+      saving = false;
+    }
+  }
+
   function formatCategoryName(category) {
     if (!category) return 'Uncategorized';
     return category
@@ -91,6 +123,14 @@
   $: availableCategories = categories.filter(
     cat => !budgets.find(b => b.category === cat)
   );
+
+  // Pre-populate amount when selecting an existing budget to update
+  $: {
+    const existingBudget = budgets.find(b => b.category === selectedCategory);
+    if (existingBudget) {
+      budgetAmount = existingBudget.amount.toString();
+    }
+  }
 </script>
 
 <div class="p-6 h-full overflow-y-auto">
@@ -142,8 +182,17 @@
         class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         disabled={saving || !selectedCategory || !budgetAmount}
       >
-        {saving ? 'Saving...' : 'Add'}
+        {saving ? 'Saving...' : budgets.find(b => b.category === selectedCategory) ? 'Update' : 'Add'}
       </button>
+      {#if selectedCategory}
+        <button
+          type="button"
+          on:click={() => { selectedCategory = ''; budgetAmount = ''; }}
+          class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 font-medium transition-colors"
+        >
+          Cancel
+        </button>
+      {/if}
     </form>
   </div>
 
@@ -186,18 +235,63 @@
                 {formatCategoryName(item.category)}
               </span>
               <div class="flex items-center gap-3">
-                <span class="text-sm {getProgressTextColor(item.percentage)}">
-                  {formatCurrency(item.actual)} / {formatCurrency(item.budget)}
-                </span>
-                <button
-                  on:click={() => handleDelete(item.category)}
-                  class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
-                  title="Delete budget"
-                >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
+                {#if editingCategory === item.category}
+                  <form on:submit|preventDefault={handleEdit} class="flex items-center gap-2">
+                    <div class="relative">
+                      <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 text-xs">R</span>
+                      <input
+                        type="number"
+                        bind:value={editAmount}
+                        min="0"
+                        step="100"
+                        class="w-24 pl-5 pr-2 py-1 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                        disabled={saving}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      class="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+                      title="Save"
+                      disabled={saving}
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      on:click={cancelEdit}
+                      class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                      title="Cancel"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </form>
+                {:else}
+                  <span class="text-sm {getProgressTextColor(item.percentage)}">
+                    {formatCurrency(item.actual)} / {formatCurrency(item.budget)}
+                  </span>
+                  <button
+                    on:click={() => startEdit(item.category, item.budget)}
+                    class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-500 transition-all"
+                    title="Edit budget"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                  <button
+                    on:click={() => handleDelete(item.category)}
+                    class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
+                    title="Delete budget"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                {/if}
               </div>
             </div>
             <div class="relative h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">

@@ -64,13 +64,13 @@ class TestDatabaseInit:
 
     def test_schema_created(self, db):
         """Test tables are created."""
-        conn = db._get_connection()
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()
-        table_names = [t["name"] for t in tables]
-        assert "statements" in table_names
-        assert "transactions" in table_names
+        with db._get_connection() as conn:
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+            table_names = [t["name"] for t in tables]
+            assert "statements" in table_names
+            assert "transactions" in table_names
 
     def test_migration_adds_statement_number_column(self, tmp_path):
         """Test migration adds statement_number column to old databases."""
@@ -116,10 +116,10 @@ class TestDatabaseInit:
         db = Database(db_path)
 
         # Verify migration added the column
-        conn = db._get_connection()
-        cursor = conn.execute("PRAGMA table_info(statements)")
-        columns = [row[1] for row in cursor.fetchall()]
-        assert "statement_number" in columns
+        with db._get_connection() as conn:
+            cursor = conn.execute("PRAGMA table_info(statements)")
+            columns = [row[1] for row in cursor.fetchall()]
+            assert "statement_number" in columns
 
 
 class TestStatements:

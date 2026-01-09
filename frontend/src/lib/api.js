@@ -1,0 +1,156 @@
+/**
+ * REST API client for the statement-chat backend.
+ */
+
+const BASE_URL = '/api/v1';
+
+/**
+ * Fetch wrapper with error handling.
+ */
+async function fetchJSON(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get database statistics.
+ */
+export async function getStats() {
+  return fetchJSON(`${BASE_URL}/stats`);
+}
+
+/**
+ * Get paginated transactions.
+ */
+export async function getTransactions(limit = 20, offset = 0) {
+  return fetchJSON(`${BASE_URL}/transactions?limit=${limit}&offset=${offset}`);
+}
+
+/**
+ * Search transactions by query.
+ */
+export async function searchTransactions(query) {
+  return fetchJSON(`${BASE_URL}/transactions/search?q=${encodeURIComponent(query)}`);
+}
+
+/**
+ * Get all categories.
+ */
+export async function getCategories() {
+  return fetchJSON(`${BASE_URL}/categories`);
+}
+
+/**
+ * Get category spending summary.
+ */
+export async function getCategorySummary() {
+  return fetchJSON(`${BASE_URL}/categories/summary`);
+}
+
+/**
+ * Get transactions by category.
+ */
+export async function getTransactionsByCategory(category) {
+  return fetchJSON(`${BASE_URL}/transactions/category/${encodeURIComponent(category)}`);
+}
+
+/**
+ * Get transactions by type (debit/credit).
+ */
+export async function getTransactionsByType(type) {
+  return fetchJSON(`${BASE_URL}/transactions/type/${type}`);
+}
+
+/**
+ * Get transactions in date range.
+ */
+export async function getTransactionsByDateRange(start, end) {
+  return fetchJSON(`${BASE_URL}/transactions/date-range?start=${start}&end=${end}`);
+}
+
+/**
+ * Health check.
+ */
+export async function healthCheck() {
+  return fetchJSON('/health');
+}
+
+// ============ Analytics API ============
+
+/**
+ * Get list of all statements.
+ */
+export async function getStatements() {
+  return fetchJSON(`${BASE_URL}/statements`);
+}
+
+/**
+ * Get analytics for the latest statement.
+ */
+export async function getLatestAnalytics() {
+  return fetchJSON(`${BASE_URL}/analytics/latest`);
+}
+
+/**
+ * Get analytics for a specific statement.
+ */
+export async function getAnalyticsByStatement(statementNumber) {
+  return fetchJSON(`${BASE_URL}/analytics/statement/${encodeURIComponent(statementNumber)}`);
+}
+
+// ============ Budget API ============
+
+/**
+ * Get all budgets.
+ */
+export async function getBudgets() {
+  return fetchJSON(`${BASE_URL}/budgets`);
+}
+
+/**
+ * Get budget summary with actual spending comparison.
+ */
+export async function getBudgetSummary() {
+  return fetchJSON(`${BASE_URL}/budgets/summary`);
+}
+
+/**
+ * Create a budget.
+ */
+export async function createBudget(category, amount) {
+  return fetchJSON(`${BASE_URL}/budgets`, {
+    method: 'POST',
+    body: JSON.stringify({ category, amount }),
+  });
+}
+
+/**
+ * Update an existing budget.
+ */
+export async function updateBudget(category, amount) {
+  return fetchJSON(`${BASE_URL}/budgets/${encodeURIComponent(category)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ amount }),
+  });
+}
+
+/**
+ * Delete a budget.
+ */
+export async function deleteBudget(category) {
+  return fetchJSON(`${BASE_URL}/budgets/${encodeURIComponent(category)}`, {
+    method: 'DELETE',
+  });
+}

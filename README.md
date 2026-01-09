@@ -40,6 +40,9 @@ source .venv/bin/activate
 
 # Install dependencies
 pip install -e .
+
+# Install with test dependencies (pytest, coverage)
+pip install -e ".[test]"
 ```
 
 ## Setup

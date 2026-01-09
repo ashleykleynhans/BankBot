@@ -8,6 +8,7 @@ from ..models import (
     BudgetResponse,
     BudgetSummaryItem,
     BudgetSummaryResponse,
+    BudgetUpdate,
 )
 
 router = APIRouter()
@@ -41,6 +42,28 @@ async def create_or_update_budget(
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to create budget")
 
+    return BudgetResponse(**updated)
+
+
+@router.put("/budgets/{category}", response_model=BudgetResponse)
+async def update_budget(
+    request: Request,
+    category: str,
+    budget: BudgetUpdate
+) -> BudgetResponse:
+    """Update an existing budget's amount."""
+    db = request.app.state.db
+
+    existing = db.get_budget_by_category(category)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"No budget found for category: {category}")
+
+    if budget.amount < 0:
+        raise HTTPException(status_code=400, detail="Budget amount must be positive")
+
+    db.upsert_budget(category, budget.amount)
+
+    updated = db.get_budget_by_category(category)
     return BudgetResponse(**updated)
 
 
