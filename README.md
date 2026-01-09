@@ -1,8 +1,15 @@
 # BankBot
 
-A local-first application that parses PDF bank statements, auto-classifies transactions
-using a local LLM (Ollama), and lets you explore your spending through a modern web UI
-or CLI chat interface. All data stays on your machine.
+A local-first application that parses South African bank statement PDFs, auto-classifies
+transactions using a local LLM (Ollama), and lets you explore your spending through a
+modern web UI or CLI chat interface. All data stays on your machine.
+
+## Supported Banks
+
+- [FNB](https://www.fnb.co.za/) (First National Bank)
+
+Want to add support for another bank? See [Adding Support for New Banks](
+#adding-support-for-new-banks).
 
 > [!WARNING]
 > This application processes sensitive financial data. **Run locally only** - do
