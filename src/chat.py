@@ -314,6 +314,8 @@ class ChatInterface:
 Be concise and direct. Use South African Rand (R) for amounts.
 Always address the user as "you"/"your", never "the user".
 
+For greetings (hi, hello, hey, etc.), respond with a friendly greeting and offer to help with their transactions. Don't list transaction data for greetings.
+
 When listing spending or transactions:
 - List each transaction with its date and amount
 - Use the pre-calculated TOTAL provided in the context - never calculate totals yourself
