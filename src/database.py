@@ -314,6 +314,37 @@ class Database:
             ).fetchone()
             return dict(row) if row else None
 
+    def delete_statement_by_filename(self, filename: str) -> bool:
+        """Delete a statement and all its transactions by filename.
+
+        Returns True if a statement was deleted, False if not found.
+        """
+        with self._get_connection() as conn:
+            # Find the statement
+            row = conn.execute(
+                "SELECT id FROM statements WHERE filename = ?",
+                (filename,)
+            ).fetchone()
+
+            if not row:
+                return False
+
+            statement_id = row["id"]
+
+            # Delete transactions first (foreign key)
+            conn.execute(
+                "DELETE FROM transactions WHERE statement_id = ?",
+                (statement_id,)
+            )
+
+            # Delete statement
+            conn.execute(
+                "DELETE FROM statements WHERE id = ?",
+                (statement_id,)
+            )
+
+            return True
+
     def get_transactions_by_statement(self, statement_number: str) -> list[dict]:
         """Get all transactions for a specific statement."""
         with self._get_connection() as conn:

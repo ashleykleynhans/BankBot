@@ -363,3 +363,55 @@ class TestBudgetOperations:
         """Test deleting non-existent budget."""
         deleted = db.delete_budget("nonexistent")
         assert deleted is False
+
+
+class TestDeleteStatement:
+    """Tests for delete_statement_by_filename method."""
+
+    def test_delete_statement_success(self, db_with_data):
+        """Test deleting a statement and its transactions."""
+        # Verify statement exists
+        assert db_with_data.statement_exists("test.pdf")
+        transactions_before = db_with_data.get_all_transactions()
+        assert len(transactions_before) == 3
+
+        # Delete the statement
+        deleted = db_with_data.delete_statement_by_filename("test.pdf")
+        assert deleted is True
+
+        # Verify statement is gone
+        assert not db_with_data.statement_exists("test.pdf")
+
+        # Verify transactions are gone
+        transactions_after = db_with_data.get_all_transactions()
+        assert len(transactions_after) == 0
+
+    def test_delete_statement_not_found(self, db):
+        """Test deleting non-existent statement returns False."""
+        deleted = db.delete_statement_by_filename("nonexistent.pdf")
+        assert deleted is False
+
+    def test_delete_statement_only_deletes_target(self, db):
+        """Test deleting one statement doesn't affect others."""
+        # Insert two statements with transactions
+        stmt1 = db.insert_statement("statement1.pdf", "111", "2025-01-01")
+        stmt2 = db.insert_statement("statement2.pdf", "222", "2025-02-01")
+
+        db.insert_transaction(stmt1, "2025-01-15", "Tx1", 100.00)
+        db.insert_transaction(stmt1, "2025-01-16", "Tx2", 200.00)
+        db.insert_transaction(stmt2, "2025-02-15", "Tx3", 300.00)
+
+        # Delete first statement
+        deleted = db.delete_statement_by_filename("statement1.pdf")
+        assert deleted is True
+
+        # First statement should be gone
+        assert not db.statement_exists("statement1.pdf")
+
+        # Second statement should still exist
+        assert db.statement_exists("statement2.pdf")
+
+        # Only transactions from second statement should remain
+        remaining = db.get_all_transactions()
+        assert len(remaining) == 1
+        assert remaining[0]["description"] == "Tx3"

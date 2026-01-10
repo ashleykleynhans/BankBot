@@ -35,6 +35,15 @@ class FNBParser(BaseBankParser):
                 page_text = page.extract_text() or ""
                 full_text += page_text + "\n"
 
+                # Also try to extract tables for better column handling
+                tables = page.extract_tables() or []
+                for table in tables:
+                    for row in table:
+                        if row:
+                            # Join non-empty cells with space
+                            row_text = " ".join(str(cell) for cell in row if cell)
+                            full_text += row_text + "\n"
+
         # Extract account number
         account_number = self._extract_account_number(full_text)
 

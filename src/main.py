@@ -16,7 +16,7 @@ from .classifier import TransactionClassifier
 from .config import get_config
 from .database import Database
 from .parsers import list_available_parsers
-from .watcher import StatementWatcher, import_existing
+from .watcher import StatementWatcher, import_existing, reimport_statement
 
 
 console = Console()
@@ -316,6 +316,50 @@ def cmd_rename(args: argparse.Namespace, config: dict) -> None:
     console.print(f"\n[bold]Summary: {renamed} renamed, {skipped} skipped, {errors} errors[/bold]")
 
 
+def cmd_reimport(args: argparse.Namespace, config: dict) -> None:
+    """Re-import a specific PDF statement (deletes existing and re-imports)."""
+    pdf_path = Path(args.file)
+
+    if not pdf_path.exists():
+        console.print(f"[red]File not found: {pdf_path}[/red]")
+        sys.exit(1)
+
+    bank = args.bank if args.bank else config["bank"]
+
+    db = Database(config["paths"]["database"])
+    classifier = TransactionClassifier(
+        host=config["ollama"]["host"],
+        port=config["ollama"]["port"],
+        model=config["ollama"]["model"],
+        categories=config.get("categories"),
+        classification_rules=config.get("classification_rules")
+    )
+
+    # Check Ollama connection
+    if not classifier.check_connection():
+        console.print(
+            f"[red]Cannot connect to Ollama or model '{config['ollama']['model']}' "
+            f"not found.[/red]"
+        )
+        sys.exit(1)
+
+    console.print(f"[dim]Re-importing: {pdf_path}[/dim]")
+    console.print(f"[dim]Using parser: {bank}[/dim]\n")
+
+    success = reimport_statement(
+        pdf_path=pdf_path,
+        db=db,
+        bank=bank,
+        classifier=classifier
+    )
+
+    if success:
+        console.print("\n[bold green]Re-import completed successfully[/bold green]")
+    else:
+        console.print("\n[bold red]Re-import failed[/bold red]")
+        sys.exit(1)
+
+
 def cmd_serve(args: argparse.Namespace, config: dict) -> None:
     """Start the API server."""
     import uvicorn
@@ -341,12 +385,13 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s import          Import all PDFs from statements directory
-  %(prog)s watch           Watch for new statements and auto-import
-  %(prog)s chat            Start interactive chat
-  %(prog)s list            List recent transactions
-  %(prog)s search "doctor" Search for transactions
-  %(prog)s categories      Show spending by category
+  %(prog)s import               Import all PDFs from statements directory
+  %(prog)s watch                Watch for new statements and auto-import
+  %(prog)s chat                 Start interactive chat
+  %(prog)s list                 List recent transactions
+  %(prog)s search "doctor"      Search for transactions
+  %(prog)s categories           Show spending by category
+  %(prog)s reimport 288_Dec.pdf Re-import a specific statement
         """
     )
 
@@ -389,6 +434,11 @@ Examples:
     # Rename command
     subparsers.add_parser("rename", help="Rename PDFs to {number}_{month}_{year}.pdf format")
 
+    # Reimport command
+    reimport_parser = subparsers.add_parser("reimport", help="Re-import a specific PDF statement")
+    reimport_parser.add_argument("file", help="Path to the PDF file to re-import")
+    reimport_parser.add_argument("--bank", help="Bank parser to use (overrides config)")
+
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start API server")
     serve_parser.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
@@ -419,6 +469,7 @@ Examples:
         "search": cmd_search,
         "parsers": cmd_parsers,
         "rename": cmd_rename,
+        "reimport": cmd_reimport,
         "serve": cmd_serve,
     }
 

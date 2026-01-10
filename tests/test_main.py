@@ -9,7 +9,7 @@ from io import StringIO
 from src import main
 from src.main import (
     cmd_import, cmd_watch, cmd_chat, cmd_list,
-    cmd_categories, cmd_stats, cmd_search, cmd_parsers, cmd_rename, cmd_serve
+    cmd_categories, cmd_stats, cmd_search, cmd_parsers, cmd_rename, cmd_reimport, cmd_serve
 )
 
 
@@ -656,6 +656,126 @@ class TestCmdRename:
 
         # File should still exist
         assert pdf_file.exists()
+
+
+class TestCmdReimport:
+    """Tests for cmd_reimport function."""
+
+    @patch('src.main.reimport_statement')
+    @patch('src.main.TransactionClassifier')
+    @patch('src.main.Database')
+    def test_reimport_success(self, mock_db, mock_classifier, mock_reimport, mock_config, tmp_path):
+        """Test successful reimport."""
+        mock_classifier.return_value.check_connection.return_value = True
+        mock_reimport.return_value = True
+
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.touch()
+
+        args = argparse.Namespace(file=str(pdf_file), bank=None)
+        cmd_reimport(args, mock_config)
+
+        mock_reimport.assert_called_once()
+
+    @patch('src.main.TransactionClassifier')
+    @patch('src.main.Database')
+    def test_reimport_file_not_found(self, mock_db, mock_classifier, mock_config, tmp_path):
+        """Test reimport with non-existent file."""
+        args = argparse.Namespace(file=str(tmp_path / "nonexistent.pdf"), bank=None)
+
+        with pytest.raises(SystemExit) as exc:
+            cmd_reimport(args, mock_config)
+
+        assert exc.value.code == 1
+
+    @patch('src.main.TransactionClassifier')
+    @patch('src.main.Database')
+    def test_reimport_no_ollama_connection(self, mock_db, mock_classifier, mock_config, tmp_path):
+        """Test reimport fails when Ollama not connected."""
+        mock_classifier.return_value.check_connection.return_value = False
+
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.touch()
+
+        args = argparse.Namespace(file=str(pdf_file), bank=None)
+
+        with pytest.raises(SystemExit) as exc:
+            cmd_reimport(args, mock_config)
+
+        assert exc.value.code == 1
+
+    @patch('src.main.reimport_statement')
+    @patch('src.main.TransactionClassifier')
+    @patch('src.main.Database')
+    def test_reimport_with_bank_override(self, mock_db, mock_classifier, mock_reimport, mock_config, tmp_path):
+        """Test reimport with --bank override."""
+        mock_classifier.return_value.check_connection.return_value = True
+        mock_reimport.return_value = True
+
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.touch()
+
+        args = argparse.Namespace(file=str(pdf_file), bank="standardbank")
+        cmd_reimport(args, mock_config)
+
+        call_kwargs = mock_reimport.call_args.kwargs
+        assert call_kwargs["bank"] == "standardbank"
+
+    @patch('src.main.reimport_statement')
+    @patch('src.main.TransactionClassifier')
+    @patch('src.main.Database')
+    def test_reimport_failure(self, mock_db, mock_classifier, mock_reimport, mock_config, tmp_path):
+        """Test reimport exits with error when reimport fails."""
+        mock_classifier.return_value.check_connection.return_value = True
+        mock_reimport.return_value = False
+
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.touch()
+
+        args = argparse.Namespace(file=str(pdf_file), bank=None)
+
+        with pytest.raises(SystemExit) as exc:
+            cmd_reimport(args, mock_config)
+
+        assert exc.value.code == 1
+
+    @patch('src.main.get_config')
+    @patch('src.main.cmd_reimport')
+    def test_main_reimport_command(self, mock_cmd, mock_config, tmp_path):
+        """Test main with reimport command."""
+        mock_config.return_value = {
+            "bank": "fnb",
+            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "paths": {"database": "test.db", "statements_dir": "./statements"},
+        }
+
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.touch()
+
+        with patch.object(sys, 'argv', ['prog', 'reimport', str(pdf_file)]):
+            main.main()
+
+        mock_cmd.assert_called_once()
+
+    @patch('src.main.get_config')
+    @patch('src.main.cmd_reimport')
+    def test_main_reimport_with_bank_option(self, mock_cmd, mock_config, tmp_path):
+        """Test main with reimport command and --bank option."""
+        mock_config.return_value = {
+            "bank": "fnb",
+            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "paths": {"database": "test.db", "statements_dir": "./statements"},
+        }
+
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.touch()
+
+        with patch.object(sys, 'argv', ['prog', 'reimport', str(pdf_file), '--bank', 'standardbank']):
+            main.main()
+
+        mock_cmd.assert_called_once()
+        args = mock_cmd.call_args[0][0]
+        assert args.bank == "standardbank"
 
 
 class TestCmdServe:

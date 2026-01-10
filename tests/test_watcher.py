@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 from watchdog.events import FileCreatedEvent
 
-from src.watcher import StatementHandler, StatementWatcher, import_existing
+from src.watcher import StatementHandler, StatementWatcher, import_existing, reimport_statement
 from src.parsers.base import StatementData, Transaction
 from src.classifier import ClassificationResult
 
@@ -388,3 +388,129 @@ class TestImportExisting:
             "290_Jan_2026.pdf",
             "old_format.pdf",
         ]
+
+
+class TestReimportStatement:
+    """Tests for reimport_statement function."""
+
+    def test_reimport_file_not_found(self, mock_db, mock_classifier, tmp_path):
+        """Test reimport returns False for non-existent file."""
+        result = reimport_statement(
+            tmp_path / "nonexistent.pdf",
+            mock_db,
+            "fnb",
+            mock_classifier
+        )
+
+        assert result is False
+
+    def test_reimport_deletes_existing_first(self, mock_db, mock_classifier, tmp_path):
+        """Test reimport deletes existing statement before re-importing."""
+        mock_parser = Mock()
+        mock_parser.parse.return_value = StatementData(
+            account_number="123",
+            statement_date="2025-01-01",
+            transactions=[]
+        )
+        mock_db.delete_statement_by_filename.return_value = True
+
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.touch()
+
+        with patch('src.watcher.get_parser', return_value=mock_parser):
+            result = reimport_statement(pdf_file, mock_db, "fnb", mock_classifier)
+
+        assert result is True
+        mock_db.delete_statement_by_filename.assert_called_once_with("test.pdf")
+        mock_db.insert_statement.assert_called_once()
+
+    def test_reimport_new_file(self, mock_db, mock_classifier, tmp_path):
+        """Test reimport works for file not previously imported."""
+        mock_parser = Mock()
+        mock_parser.parse.return_value = StatementData(
+            account_number="123",
+            statement_date="2025-01-01",
+            transactions=[
+                Transaction(
+                    date="2025-01-15",
+                    description="Test",
+                    amount=-100.00,
+                    balance=1000.00,
+                )
+            ]
+        )
+        mock_db.delete_statement_by_filename.return_value = False  # Not found
+
+        pdf_file = tmp_path / "new.pdf"
+        pdf_file.touch()
+
+        with patch('src.watcher.get_parser', return_value=mock_parser):
+            result = reimport_statement(pdf_file, mock_db, "fnb", mock_classifier)
+
+        assert result is True
+        mock_db.insert_statement.assert_called_once()
+        mock_db.insert_transactions_batch.assert_called_once()
+
+    def test_reimport_handles_parse_error(self, mock_db, mock_classifier, tmp_path):
+        """Test reimport returns False on parse error."""
+        mock_parser = Mock()
+        mock_parser.parse.side_effect = Exception("Parse error")
+        mock_db.delete_statement_by_filename.return_value = False
+
+        pdf_file = tmp_path / "bad.pdf"
+        pdf_file.touch()
+
+        with patch('src.watcher.get_parser', return_value=mock_parser):
+            result = reimport_statement(pdf_file, mock_db, "fnb", mock_classifier)
+
+        assert result is False
+
+    def test_reimport_classifies_transactions(self, mock_db, mock_classifier, tmp_path):
+        """Test reimport classifies all transactions."""
+        mock_parser = Mock()
+        mock_parser.parse.return_value = StatementData(
+            account_number="123",
+            statement_date="2025-01-01",
+            transactions=[
+                Transaction(date="2025-01-15", description="Groceries", amount=-100.00),
+                Transaction(date="2025-01-16", description="Salary", amount=5000.00),
+            ]
+        )
+        mock_db.delete_statement_by_filename.return_value = False
+
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.touch()
+
+        with patch('src.watcher.get_parser', return_value=mock_parser):
+            reimport_statement(pdf_file, mock_db, "fnb", mock_classifier)
+
+        # Classifier should be called for each transaction
+        assert mock_classifier.classify.call_count == 2
+
+    def test_reimport_credit_transaction(self, mock_db, mock_classifier, tmp_path):
+        """Test reimport correctly identifies credit transactions."""
+        mock_parser = Mock()
+        mock_parser.parse.return_value = StatementData(
+            account_number="123",
+            statement_date="2025-01-01",
+            transactions=[
+                Transaction(
+                    date="2025-01-15",
+                    description="Salary",
+                    amount=10000.00,  # Positive = credit
+                    balance=11000.00,
+                )
+            ]
+        )
+        mock_db.delete_statement_by_filename.return_value = False
+
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.touch()
+
+        with patch('src.watcher.get_parser', return_value=mock_parser):
+            reimport_statement(pdf_file, mock_db, "fnb", mock_classifier)
+
+        # Check the transaction was inserted with correct type
+        call_args = mock_db.insert_transactions_batch.call_args[0]
+        transactions = call_args[1]
+        assert transactions[0]["transaction_type"] == "credit"

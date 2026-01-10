@@ -236,3 +236,69 @@ def import_existing(
             console.print(f"[red]Error: {e}[/red]")
 
     return imported
+
+
+def reimport_statement(
+    pdf_path: str | Path,
+    db: Database,
+    bank: str,
+    classifier: TransactionClassifier
+) -> bool:
+    """Re-import a specific PDF statement (delete existing and re-import).
+
+    Returns:
+        True if successful, False if failed
+    """
+    pdf_path = Path(pdf_path)
+    console = Console()
+
+    if not pdf_path.exists():
+        console.print(f"[red]File not found: {pdf_path}[/red]")
+        return False
+
+    filename = pdf_path.name
+    parser = get_parser(bank)
+
+    # Delete existing statement and transactions
+    if db.delete_statement_by_filename(filename):
+        console.print(f"[yellow]Deleted existing import of {filename}[/yellow]")
+
+    console.print(f"[cyan]Processing {filename}...[/cyan]")
+
+    try:
+        statement_data = parser.parse(pdf_path)
+
+        statement_id = db.insert_statement(
+            filename=filename,
+            account_number=statement_data.account_number,
+            statement_date=statement_data.statement_date,
+            statement_number=statement_data.statement_number
+        )
+
+        transactions_to_insert = []
+        for tx in statement_data.transactions:
+            tx_type = "credit" if tx.amount > 0 else "debit"
+            classification = classifier.classify(tx.description, tx.amount)
+
+            transactions_to_insert.append({
+                "date": tx.date,
+                "description": tx.description,
+                "amount": abs(tx.amount),
+                "balance": tx.balance,
+                "transaction_type": tx_type,
+                "category": classification.category,
+                "recipient_or_payer": classification.recipient_or_payer,
+                "reference": tx.reference,
+                "raw_text": tx.raw_text
+            })
+
+        db.insert_transactions_batch(statement_id, transactions_to_insert)
+
+        console.print(
+            f"[green]Imported {len(transactions_to_insert)} transactions[/green]"
+        )
+        return True
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        return False
