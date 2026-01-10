@@ -77,9 +77,9 @@ class FNBParser(BaseBankParser):
 
     def _extract_statement_date(self, text: str) -> str | None:
         """Extract statement date from text."""
-        # Look for "Statement Date : 1 November 2025"
+        # Look for "Statement Date : 1 November 2025" or "StatementDate:1November2025"
         match = re.search(
-            r"Statement\s*Date\s*[:\s]+(\d{1,2}\s+\w+\s+\d{4})",
+            r"Statement\s*Date\s*[:\s]+(\d{1,2}\s*\w+\s*\d{4})",
             text, re.IGNORECASE
         )
         if match:
@@ -99,14 +99,18 @@ class FNBParser(BaseBankParser):
 
     def _normalize_date(self, date_str: str) -> str | None:
         """Convert various date formats to YYYY-MM-DD."""
+        date_str = date_str.strip()
+
+        # Add spaces if missing (e.g., "1February2025" -> "1 February 2025")
+        date_str = re.sub(r"(\d)([A-Za-z])", r"\1 \2", date_str)
+        date_str = re.sub(r"([A-Za-z])(\d)", r"\1 \2", date_str)
+
         date_formats = [
             "%d %B %Y",
             "%d %b %Y",
             "%d/%m/%Y",
             "%Y/%m/%d",
         ]
-
-        date_str = date_str.strip()
 
         for fmt in date_formats:
             try:
