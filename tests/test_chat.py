@@ -605,6 +605,14 @@ class TestFindRelevantTransactionsExtended:
 class TestFollowUpDetection:
     """Tests for follow-up query detection."""
 
+    def test_greeting_not_follow_up(self, mock_db):
+        """Test greetings are never detected as follow-ups."""
+        with patch('src.chat.ollama.Client'):
+            chat = ChatInterface(mock_db)
+            assert chat._is_follow_up_query("hi") is False
+            assert chat._is_follow_up_query("hello") is False
+            assert chat._is_follow_up_query("thanks") is False
+
     def test_detects_them_as_follow_up(self, mock_db):
         """Test 'them' is detected as follow-up."""
         with patch('src.chat.ollama.Client'):

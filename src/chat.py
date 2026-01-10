@@ -95,6 +95,11 @@ class ChatInterface:
         query_lower = query.lower()
         words = set(re.findall(r"\b\w+\b", query_lower))
 
+        # Greetings are never follow-ups
+        greetings = {"hi", "hello", "hey", "howdy", "greetings", "thanks"}
+        if words & greetings:
+            return False
+
         # Pronouns/references that indicate follow-up
         follow_up_indicators = {
             "them", "these", "those", "it", "they",
