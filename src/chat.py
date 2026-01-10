@@ -136,11 +136,25 @@ class ChatInterface:
             date_start = today.replace(day=1)
             date_end = today
 
-        # Check for category keywords
+        # Check for category keywords (with common synonyms)
+        category_synonyms = {
+            "saved": "savings",
+            "save": "savings",
+            "doctor": "medical",
+            "doctors": "medical",
+            "petrol": "fuel",
+            "gas": "fuel",
+        }
+        # Expand query with synonyms
+        expanded_query = query_lower
+        for synonym, category in category_synonyms.items():
+            if synonym in query_lower:
+                expanded_query += f" {category}"
+
         categories = self.db.get_all_categories()
         matched_category = None
         for category in categories:
-            if category and category.lower() in query_lower:
+            if category and category.lower() in expanded_query:
                 matched_category = category
                 break
 
@@ -310,8 +324,10 @@ When listing spending or transactions:
 
 For budget questions:
 - If asked about a specific category, report that category's budget status
-- If asked about overall/total budget, use the OVERALL BUDGET TOTAL from the context
+- If asked about overall/total budget, list ALL categories with their status, then show the OVERALL BUDGET TOTAL
 - Each category has its own separate budget - don't mix them
+
+"Saved" or "savings" refers to transactions in the "savings" category (transfers to savings/investments), not credits received.
 
 Today is {current_date}. Current month: {current_month}. Last month: {last_month}."""
 
