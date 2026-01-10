@@ -1,10 +1,14 @@
 """FNB (First National Bank) statement parser."""
 
+import io
 import re
 from datetime import datetime
 from pathlib import Path
 
+import fitz  # PyMuPDF
 import pdfplumber
+import pytesseract
+from PIL import Image
 
 from . import register_parser
 from .base import BaseBankParser, StatementData, Transaction
@@ -55,6 +59,9 @@ class FNBParser(BaseBankParser):
 
         # Parse transactions from text
         transactions = self._parse_transactions(full_text)
+
+        # Use OCR to fill in missing descriptions (FNB uses special font for # descriptions)
+        transactions = self._fill_missing_descriptions_with_ocr(pdf_path, transactions)
 
         return StatementData(
             account_number=account_number,
@@ -119,6 +126,137 @@ class FNBParser(BaseBankParser):
             except ValueError:
                 continue
         return date_str
+
+    def _fill_missing_descriptions_with_ocr(
+        self, pdf_path: Path, transactions: list[Transaction]
+    ) -> list[Transaction]:
+        """Use OCR to fill in descriptions that couldn't be extracted.
+
+        FNB uses a special font for system-generated descriptions (starting with #)
+        that PDF text extraction can't read. OCR can capture these.
+        """
+        # Check if any transactions need OCR (missing or generic descriptions)
+        generic_descriptions = {"Credit/Deposit", "Bank fee/charge"}
+        needs_ocr = any(
+            tx.description in generic_descriptions
+            for tx in transactions
+        )
+
+        if not needs_ocr:
+            return transactions
+
+        # Extract descriptions via OCR
+        ocr_descriptions = self._extract_descriptions_via_ocr(pdf_path)
+
+        # Match OCR descriptions to transactions by month-day and amount
+        updated_transactions = []
+        for tx in transactions:
+            if tx.description in generic_descriptions:
+                # Try to find matching OCR description (using month-day, amount as key)
+                month_day = tx.date[5:] if tx.date else ""  # Extract MM-DD
+                key = (month_day, tx.amount)
+                if key in ocr_descriptions:
+                    tx = Transaction(
+                        date=tx.date,
+                        description=ocr_descriptions[key],
+                        amount=tx.amount,
+                        balance=tx.balance,
+                        reference=tx.reference,
+                        raw_text=tx.raw_text,
+                    )
+            updated_transactions.append(tx)
+
+        return updated_transactions
+
+    def _extract_descriptions_via_ocr(self, pdf_path: Path) -> dict[tuple, str]:
+        """Extract transaction descriptions using OCR.
+
+        Returns a dict mapping (date, amount) to description.
+        """
+        descriptions = {}
+
+        try:
+            doc = fitz.open(pdf_path)
+            for page in doc:
+                # Render page to image at 2x resolution for better OCR
+                mat = fitz.Matrix(2, 2)
+                pix = page.get_pixmap(matrix=mat)
+                img = Image.open(io.BytesIO(pix.tobytes("png")))
+
+                # Run OCR
+                ocr_text = pytesseract.image_to_string(img)
+
+                # Parse OCR text for transaction lines
+                for line in ocr_text.split("\n"):
+                    # Look for transaction pattern: date | description | amount | balance
+                    # OCR output format varies, look for date at start
+                    # Handle OCR errors like "I30" instead of "30", "¢7" instead of "Cr"
+                    match = re.match(
+                        r"[|\[I]?\s*(\d{1,2}\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec))\s*[|\s]+"
+                        r"(.+?)\s+"
+                        r"([\d,]+\.\d{2}[Cc¢][r7|]*)\s*[|\s]*"  # Credit with OCR variations
+                        r"[\d,]+[.,]\d+",
+                        line,
+                        re.IGNORECASE,
+                    )
+                    # Also try pattern for debits (no Cr suffix)
+                    if not match:
+                        match = re.match(
+                            r"[|\[I]?\s*(\d{1,2}\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec))\s*[|\s]+"
+                            r"(.+?)\s+"
+                            r"([\d,]+\.\d{2})\s+[|\s]*"  # Debit (no suffix)
+                            r"[\d,]+[.,]\d+",
+                            line,
+                            re.IGNORECASE,
+                        )
+                        is_debit_match = True
+                    else:
+                        is_debit_match = False
+
+                    if match:
+                        date_str = match.group(1).strip()
+                        description = match.group(2).strip()
+                        amount_str = match.group(3).strip()
+
+                        # Clean up description (remove OCR artifacts)
+                        description = re.sub(r"[|\[\]]", "", description).strip()
+
+                        # Skip if description is empty or just whitespace
+                        if not description or description.isspace():
+                            continue
+
+                        # Parse date to standard format
+                        try:
+                            # Add spaces if missing
+                            date_str = re.sub(r"(\d)([A-Za-z])", r"\1 \2", date_str)
+                            dt = datetime.strptime(f"{date_str} 2025", "%d %b %Y")
+                            date = dt.strftime("%Y-%m-%d")
+                        except ValueError:
+                            continue
+
+                        # Parse amount - check for Cr/credit indicators (including OCR errors)
+                        is_credit = bool(re.search(r"[Cc¢][r7|]", amount_str))
+                        amount_str = re.sub(r"[Cc¢][r7|]+", "", amount_str).replace(",", "")
+                        try:
+                            amount = float(amount_str)
+                            if is_credit:
+                                amount = amount  # positive for credit
+                            else:
+                                amount = -amount  # negative for debit
+                        except ValueError:
+                            continue
+
+                        # Store with date and amount as key
+                        # Note: year in date might be wrong, we'll match by month/day + amount
+                        month_day = date[5:]  # MM-DD
+                        descriptions[(month_day, amount)] = description
+
+            doc.close()
+        except Exception:
+            # If OCR fails, just return empty dict and use default descriptions
+            pass
+
+        return descriptions
 
     def _parse_transactions(self, text: str) -> list[Transaction]:
         """Parse transactions from FNB statement text."""

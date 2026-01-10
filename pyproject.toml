@@ -10,6 +10,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pdfplumber>=0.10.0",
+    "pymupdf>=1.24.0",
+    "pytesseract>=0.3.10",
+    "pillow>=10.0.0",
     "watchdog>=3.0.0",
     "ollama>=0.1.0",
     "rich>=13.0.0",
@@ -34,6 +37,10 @@ include = ["src*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=src --cov-report=term-missing"
+filterwarnings = [
+    "ignore:builtin type Swig.*:DeprecationWarning",
+    "ignore:builtin type swig.*:DeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["src"]
