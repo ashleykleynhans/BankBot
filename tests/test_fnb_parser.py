@@ -403,6 +403,241 @@ class TestBaseBankParser:
         assert result == "debit"
 
 
+class TestOCRFallback:
+    """Tests for OCR fallback functionality."""
+
+    def test_fill_missing_descriptions_no_ocr_needed(self, parser, tmp_path):
+        """Test that OCR is skipped when all descriptions are present."""
+        transactions = [
+            Transaction(date="2025-10-01", description="Real Description", amount=-100.0),
+            Transaction(date="2025-10-02", description="Another Description", amount=-200.0),
+        ]
+
+        result = parser._fill_missing_descriptions_with_ocr(tmp_path / "test.pdf", transactions)
+
+        # Should return unchanged since no generic descriptions
+        assert result[0].description == "Real Description"
+        assert result[1].description == "Another Description"
+
+    @patch.object(FNBParser, '_extract_descriptions_via_ocr')
+    def test_fill_missing_descriptions_with_ocr(self, mock_ocr, parser, tmp_path):
+        """Test that OCR is used when generic descriptions are present."""
+        mock_ocr.return_value = {
+            ("10-01", -100.0): "#Service Fees #Test Fee",
+        }
+
+        transactions = [
+            Transaction(date="2025-10-01", description="Bank fee/charge", amount=-100.0),
+            Transaction(date="2025-10-02", description="Real Description", amount=-200.0),
+        ]
+
+        result = parser._fill_missing_descriptions_with_ocr(tmp_path / "test.pdf", transactions)
+
+        assert result[0].description == "#Service Fees #Test Fee"
+        assert result[1].description == "Real Description"
+
+    @patch.object(FNBParser, '_extract_descriptions_via_ocr')
+    def test_fill_missing_credit_deposit(self, mock_ocr, parser, tmp_path):
+        """Test OCR fills Credit/Deposit descriptions."""
+        mock_ocr.return_value = {
+            ("09-30", 19.0): "#Rev Ewa Man Fee",
+        }
+
+        transactions = [
+            Transaction(date="2025-09-30", description="Credit/Deposit", amount=19.0),
+        ]
+
+        result = parser._fill_missing_descriptions_with_ocr(tmp_path / "test.pdf", transactions)
+
+        assert result[0].description == "#Rev Ewa Man Fee"
+
+    @patch.object(FNBParser, '_extract_descriptions_via_ocr')
+    def test_fill_missing_no_match_in_ocr(self, mock_ocr, parser, tmp_path):
+        """Test description unchanged when no OCR match found."""
+        mock_ocr.return_value = {}  # No OCR results
+
+        transactions = [
+            Transaction(date="2025-10-01", description="Bank fee/charge", amount=-100.0),
+        ]
+
+        result = parser._fill_missing_descriptions_with_ocr(tmp_path / "test.pdf", transactions)
+
+        # Should keep original description
+        assert result[0].description == "Bank fee/charge"
+
+    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pytesseract')
+    def test_extract_descriptions_via_ocr_success(self, mock_tesseract, mock_fitz, parser, tmp_path):
+        """Test OCR extraction parses transaction lines correctly."""
+        # Mock OCR output
+        mock_tesseract.image_to_string.return_value = """
+        Some header text
+        30 Sep |#Service Fees #Int Pymt Fee 3.00 19,125.65Cr
+        30 Sep |#Rev Ewa Man Fee 19.00Cr 19,144.65Cr
+        01 Oct |Regular Transaction 100.00 19,000.00Cr
+        """
+
+        # Mock fitz page rendering
+        mock_page = MagicMock()
+        mock_pix = MagicMock()
+        mock_pix.tobytes.return_value = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100  # Minimal PNG header
+        mock_page.get_pixmap.return_value = mock_pix
+
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = lambda self: iter([mock_page])
+        mock_fitz.open.return_value = mock_doc
+        mock_fitz.Matrix.return_value = MagicMock()
+
+        # Mock PIL Image
+        with patch('src.parsers.fnb.Image.open') as mock_image:
+            mock_image.return_value = MagicMock()
+
+            result = parser._extract_descriptions_via_ocr(tmp_path / "test.pdf")
+
+        # Should have extracted descriptions
+        assert ("09-30", -3.0) in result
+        assert result[("09-30", -3.0)] == "#Service Fees #Int Pymt Fee"
+        assert ("09-30", 19.0) in result
+        assert result[("09-30", 19.0)] == "#Rev Ewa Man Fee"
+
+    @patch('src.parsers.fnb.fitz')
+    def test_extract_descriptions_via_ocr_handles_error(self, mock_fitz, parser, tmp_path):
+        """Test OCR extraction handles errors gracefully."""
+        mock_fitz.open.side_effect = Exception("PDF error")
+
+        result = parser._extract_descriptions_via_ocr(tmp_path / "test.pdf")
+
+        # Should return empty dict on error
+        assert result == {}
+
+    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pytesseract')
+    def test_extract_descriptions_ocr_credit_variations(self, mock_tesseract, mock_fitz, parser, tmp_path):
+        """Test OCR handles various credit indicator formats (Cr, ¢7, etc.)."""
+        # Mock OCR output with OCR errors in Cr (realistic OCR mangles balance too)
+        # Note: No leading whitespace - re.match() requires pattern at start of line
+        mock_tesseract.image_to_string.return_value = "I30 Sep |#Rev Ewa Man Fee 19.00¢7 19144.65\n"
+
+        mock_page = MagicMock()
+        mock_pix = MagicMock()
+        mock_pix.tobytes.return_value = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        mock_page.get_pixmap.return_value = mock_pix
+
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = lambda self: iter([mock_page])
+        mock_fitz.open.return_value = mock_doc
+        mock_fitz.Matrix.return_value = MagicMock()
+
+        with patch('src.parsers.fnb.Image.open') as mock_image:
+            mock_image.return_value = MagicMock()
+
+            result = parser._extract_descriptions_via_ocr(tmp_path / "test.pdf")
+
+        # Should have parsed the credit despite OCR errors
+        assert ("09-30", 19.0) in result
+
+    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pytesseract')
+    def test_extract_descriptions_skips_empty_description(self, mock_tesseract, mock_fitz, parser, tmp_path):
+        """Test OCR skips lines with empty descriptions."""
+        mock_tesseract.image_to_string.return_value = """
+        30 Sep |  100.00 19,000.00Cr
+        """
+
+        mock_page = MagicMock()
+        mock_pix = MagicMock()
+        mock_pix.tobytes.return_value = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        mock_page.get_pixmap.return_value = mock_pix
+
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = lambda self: iter([mock_page])
+        mock_fitz.open.return_value = mock_doc
+        mock_fitz.Matrix.return_value = MagicMock()
+
+        with patch('src.parsers.fnb.Image.open') as mock_image:
+            mock_image.return_value = MagicMock()
+
+            result = parser._extract_descriptions_via_ocr(tmp_path / "test.pdf")
+
+        # Empty description should be skipped
+        assert len(result) == 0
+
+    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pytesseract')
+    def test_extract_descriptions_invalid_date(self, mock_tesseract, mock_fitz, parser, tmp_path):
+        """Test OCR skips lines with invalid dates (ValueError in strptime)."""
+        # 31 Feb is invalid - regex matches but strptime fails with ValueError
+        mock_tesseract.image_to_string.return_value = "31 Feb |Some Transaction 100.00 19,000.00Cr\n"
+
+        mock_page = MagicMock()
+        mock_pix = MagicMock()
+        mock_pix.tobytes.return_value = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        mock_page.get_pixmap.return_value = mock_pix
+
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = lambda self: iter([mock_page])
+        mock_fitz.open.return_value = mock_doc
+        mock_fitz.Matrix.return_value = MagicMock()
+
+        with patch('src.parsers.fnb.Image.open') as mock_image:
+            mock_image.return_value = MagicMock()
+
+            result = parser._extract_descriptions_via_ocr(tmp_path / "test.pdf")
+
+        # Invalid date (31 Feb doesn't exist) should be skipped
+        assert len(result) == 0
+
+    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pytesseract')
+    def test_extract_descriptions_invalid_amount(self, mock_tesseract, mock_fitz, parser, tmp_path):
+        """Test OCR skips lines when amount parsing fails (ValueError in float).
+
+        This tests defensive code - the regex ensures valid digits, but we mock
+        float() to simulate edge cases where parsing might fail.
+        """
+        mock_tesseract.image_to_string.return_value = "30 Sep |Some Transaction 100.00 19,000.00Cr\n"
+
+        mock_page = MagicMock()
+        mock_pix = MagicMock()
+        mock_pix.tobytes.return_value = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        mock_page.get_pixmap.return_value = mock_pix
+
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = lambda self: iter([mock_page])
+        mock_fitz.open.return_value = mock_doc
+        mock_fitz.Matrix.return_value = MagicMock()
+
+        # Mock float to raise ValueError for amount parsing (defensive code test)
+        original_float = float
+
+        def mock_float(x):
+            # Only fail on the transaction amount, not on other floats
+            if x == "100.00":
+                raise ValueError("mocked float error")
+            return original_float(x)
+
+        with patch('src.parsers.fnb.Image.open') as mock_image:
+            mock_image.return_value = MagicMock()
+
+            with patch('builtins.float', side_effect=mock_float):
+                result = parser._extract_descriptions_via_ocr(tmp_path / "test.pdf")
+
+        # Invalid amount should be skipped
+        assert len(result) == 0
+
+    def test_fill_missing_handles_none_date(self, parser, tmp_path):
+        """Test fill_missing handles transactions with None date."""
+        transactions = [
+            Transaction(date=None, description="Credit/Deposit", amount=100.0),
+        ]
+
+        # Should not crash on None date
+        with patch.object(parser, '_extract_descriptions_via_ocr', return_value={}):
+            result = parser._fill_missing_descriptions_with_ocr(tmp_path / "test.pdf", transactions)
+
+        assert result[0].description == "Credit/Deposit"
+
+
 class TestParserRegistry:
     """Tests for parser registry functions."""
 
