@@ -196,6 +196,33 @@ class TestBuildContext:
         # Should mention there are more
         assert "more transactions" in context
 
+    def test_build_context_with_credit_transaction(self, chat, mock_db):
+        """Test building context with credit transactions calculates totals correctly."""
+        transactions = [
+            {
+                "date": "2025-01-15",
+                "description": "Salary Payment",
+                "amount": 10000.00,
+                "category": "salary",
+                "transaction_type": "credit",
+            },
+            {
+                "date": "2025-01-16",
+                "description": "Groceries",
+                "amount": 500.00,
+                "category": "groceries",
+                "transaction_type": "debit",
+            }
+        ]
+
+        context = chat._build_context(transactions, "test query")
+
+        assert "10000.00" in context
+        assert "500.00" in context
+        # Check pre-calculated totals include credits
+        assert "R500.00 spent (debits)" in context
+        assert "R10000.00 received (credits)" in context
+
 
 class TestConversationHistory:
     """Tests for conversation history management."""
@@ -727,3 +754,65 @@ class TestBudgetQueries:
             # Should NOT have budget info
             assert "Budget status" not in context
             mock_db.get_all_budgets.assert_not_called()
+
+
+class TestSynonymExpansion:
+    """Tests for category synonym expansion."""
+
+    def test_saved_expands_to_savings(self, mock_db):
+        """Test 'saved' query finds savings category."""
+        mock_db.get_all_categories.return_value = ["groceries", "savings", "fuel"]
+        mock_db.get_transactions_by_category.return_value = [
+            {"date": "2025-01-15", "description": "Transfer to savings", "amount": 1000}
+        ]
+
+        with patch('src.chat.ollama.Client'):
+            chat = ChatInterface(mock_db)
+            chat._find_relevant_transactions("how much have I saved")
+
+            mock_db.get_transactions_by_category.assert_called_with("savings")
+
+    def test_doctor_expands_to_medical(self, mock_db):
+        """Test 'doctor' query finds medical category."""
+        mock_db.get_all_categories.return_value = ["groceries", "medical", "fuel"]
+        mock_db.get_transactions_by_category.return_value = [
+            {"date": "2025-01-15", "description": "Dr Smith", "amount": 500}
+        ]
+
+        with patch('src.chat.ollama.Client'):
+            chat = ChatInterface(mock_db)
+            chat._find_relevant_transactions("when did I pay the doctor")
+
+            mock_db.get_transactions_by_category.assert_called_with("medical")
+
+    def test_petrol_expands_to_fuel(self, mock_db):
+        """Test 'petrol' query finds fuel category."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel", "medical"]
+        mock_db.get_transactions_by_category.return_value = [
+            {"date": "2025-01-15", "description": "Shell", "amount": 800}
+        ]
+
+        with patch('src.chat.ollama.Client'):
+            chat = ChatInterface(mock_db)
+            chat._find_relevant_transactions("how much petrol did I buy")
+
+            mock_db.get_transactions_by_category.assert_called_with("fuel")
+
+
+class TestDateRangeOnly:
+    """Tests for date range only queries (no category match)."""
+
+    def test_date_range_only_returns_transactions(self, mock_db):
+        """Test date range query without category returns date range transactions."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel"]
+        mock_db.get_transactions_in_date_range.return_value = [
+            {"date": "2025-12-15", "description": "Transaction 1", "amount": 100},
+            {"date": "2025-12-20", "description": "Transaction 2", "amount": 200},
+        ]
+
+        with patch('src.chat.ollama.Client'):
+            chat = ChatInterface(mock_db)
+            result = chat._find_relevant_transactions("show me last month")
+
+            mock_db.get_transactions_in_date_range.assert_called()
+            assert len(result) == 2
