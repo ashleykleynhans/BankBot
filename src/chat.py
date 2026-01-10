@@ -258,7 +258,8 @@ class ChatInterface:
             "when", "did", "i", "the", "a", "an", "to", "for", "of", "in",
             "my", "me", "last", "first", "how", "much", "many", "what",
             "where", "why", "show", "find", "get", "list", "all", "pay",
-            "paid", "spend", "spent", "make", "made", "payment", "payments"
+            "paid", "spend", "spent", "make", "made", "payment", "payments",
+            "send", "sent", "transfer", "transferred", "buy", "bought",
         }
 
         words = re.findall(r"\b[a-zA-Z]+(?:-[a-zA-Z]+)*\b", query.lower())
