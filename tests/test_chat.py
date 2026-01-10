@@ -149,6 +149,30 @@ class TestFindRelevantTransactions:
         mock_db.get_all_transactions.assert_not_called()
         assert result == []
 
+    def test_hyphen_variation_removes_hyphen(self, chat, mock_db):
+        """Test search tries removing hyphen from terms like x-ray."""
+        xray_results = [{"description": "X-Rays", "amount": 500}]
+        # First call (x-ray) returns nothing, second call (xray) returns results
+        mock_db.search_transactions.side_effect = [[], xray_results]
+
+        result = chat._find_relevant_transactions("show x-ray")
+
+        assert result == xray_results
+        # Should have tried both "x-ray" and "xray"
+        assert mock_db.search_transactions.call_count == 2
+
+    def test_hyphen_variation_adds_hyphen(self, chat, mock_db):
+        """Test search tries adding hyphen for terms like xray -> x-ray."""
+        xray_results = [{"description": "X-Rays", "amount": 500}]
+        # First call (xray) returns nothing, second call (x-ray) returns results
+        mock_db.search_transactions.side_effect = [[], xray_results]
+
+        result = chat._find_relevant_transactions("show xray")
+
+        assert result == xray_results
+        # Should have tried both "xray" and "x-ray"
+        assert mock_db.search_transactions.call_count == 2
+
     def test_find_category_with_date_range(self, chat, mock_db):
         """Test finding category transactions within a date range."""
         mock_db.get_transactions_in_date_range.return_value = [

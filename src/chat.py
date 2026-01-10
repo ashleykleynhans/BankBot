@@ -216,9 +216,23 @@ class ChatInterface:
         # Extract potential search terms
         search_terms = self._extract_search_terms(query)
         for term in search_terms:
+            # Try original term
             results = self.db.search_transactions(term)
             if results:
                 return results
+            # Try hyphen variations (xray <-> x-ray, e-mail <-> email)
+            variations = []
+            if "-" in term:
+                variations.append(term.replace("-", ""))
+            else:
+                # Common single-letter prefixes that might have hyphens
+                for prefix in ["x", "e", "t", "re", "pre"]:
+                    if term.startswith(prefix) and len(term) > len(prefix):
+                        variations.append(prefix + "-" + term[len(prefix):])
+            for variant in variations:
+                results = self.db.search_transactions(variant)
+                if results:
+                    return results
 
         # Only fall back to recent transactions for purely vague queries
         # Check if query only contains vague/generic words
@@ -242,7 +256,7 @@ class ChatInterface:
             "paid", "spend", "spent", "make", "made", "payment", "payments"
         }
 
-        words = re.findall(r"\b[a-zA-Z]+\b", query.lower())
+        words = re.findall(r"\b[a-zA-Z]+(?:-[a-zA-Z]+)*\b", query.lower())
         terms = [w for w in words if w not in stop_words and len(w) > 2]
 
         return terms
