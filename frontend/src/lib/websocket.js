@@ -132,6 +132,10 @@ function handleMessage(data) {
       // Heartbeat response, ignore
       break;
 
+    case 'cleared':
+      // Server confirmed context cleared
+      break;
+
     default:
       console.warn('Unknown message type:', data.type);
   }
@@ -174,10 +178,14 @@ export function sendMessage(text) {
 }
 
 /**
- * Clear chat history.
+ * Clear chat history and server context.
  */
 export function clearMessages() {
   messages.set([]);
+  // Also clear server-side context (conversation history, cached transactions)
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'clear' }));
+  }
 }
 
 /**

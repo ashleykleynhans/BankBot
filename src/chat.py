@@ -464,3 +464,8 @@ Answer concisely and directly."""
 
         context = self._build_context(relevant_transactions, query)
         return self._get_llm_response(query, context)
+
+    def clear_context(self) -> None:
+        """Clear conversation history and cached transactions."""
+        self._conversation_history = []
+        self._last_transactions = []

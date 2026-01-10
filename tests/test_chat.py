@@ -54,6 +54,23 @@ class TestChatInit:
         assert chat.model == "mistral"
 
 
+class TestClearContext:
+    """Tests for clearing chat context."""
+
+    def test_clear_context_clears_history(self, mock_db):
+        """Test clear_context clears conversation history and transactions."""
+        with patch('src.chat.ollama.Client'):
+            chat = ChatInterface(mock_db)
+            # Populate history and transactions
+            chat._conversation_history = [{"role": "user", "content": "test"}]
+            chat._last_transactions = [{"description": "Test", "amount": 100}]
+
+            chat.clear_context()
+
+            assert chat._conversation_history == []
+            assert chat._last_transactions == []
+
+
 class TestSearchTermExtraction:
     """Tests for search term extraction."""
 

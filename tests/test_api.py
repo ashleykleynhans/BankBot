@@ -305,6 +305,25 @@ class TestWebSocketChat:
 
                 assert response["type"] == "pong"
 
+    def test_websocket_clear_context(self, client, mock_db, mock_config):
+        """Test clearing chat context."""
+        with patch('src.api.routers.chat.session_manager') as mock_manager:
+            mock_session = Mock()
+            mock_session.session_id = "test-session-id"
+            mock_session.chat_interface.clear_context = Mock()
+            mock_manager.create_session.return_value = mock_session
+
+            with client.websocket_connect("/ws/chat") as websocket:
+                # Receive connected message
+                websocket.receive_json()
+
+                # Send clear message
+                websocket.send_json({"type": "clear"})
+                response = websocket.receive_json()
+
+                assert response["type"] == "cleared"
+                mock_session.chat_interface.clear_context.assert_called_once()
+
     def test_websocket_chat_message(self, client, mock_db, mock_config):
         """Test sending a chat message."""
         with patch('src.api.routers.chat.session_manager') as mock_manager:

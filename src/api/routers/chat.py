@@ -79,6 +79,11 @@ async def websocket_chat(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "pong"})
                 continue
 
+            if msg_type == "clear":
+                session.chat_interface.clear_context()
+                await websocket.send_json({"type": "cleared"})
+                continue
+
             if msg_type == "chat":
                 payload = message.get("payload", {})
                 query = payload.get("message", "").strip()
