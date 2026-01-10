@@ -98,8 +98,8 @@ class ChatInterface:
         # Pronouns/references that indicate follow-up
         follow_up_indicators = {
             "them", "these", "those", "it", "they",
-            "above", "previous", "that", "list",
-            "group", "sort", "filter", "summarize", "total",
+            "above", "previous",
+            "group", "sort", "filter", "summarize",
             "sum", "average", "breakdown", "analyze"
         }
 
@@ -110,8 +110,17 @@ class ChatInterface:
         # If query has no specific transaction keywords, might be follow-up
         has_specific_keywords = any(word in query_lower for word in [
             "show", "find", "search", "electricity", "groceries", "fuel",
-            "medical", "salary", "deposit", "last month", "this month"
+            "medical", "salary", "deposit", "last month", "this month",
+            "budget", "saved", "savings", "spent", "spend", "remaining"
         ])
+
+        # Check if query mentions any category name
+        if not has_specific_keywords:
+            categories = self.db.get_all_categories()
+            for category in categories:
+                if category and category.lower().replace("_", " ") in query_lower:
+                    has_specific_keywords = True
+                    break
 
         # Short queries without specific keywords are likely follow-ups
         if len(query.split()) <= 5 and not has_specific_keywords:

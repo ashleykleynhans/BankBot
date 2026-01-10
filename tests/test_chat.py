@@ -606,6 +606,15 @@ class TestFollowUpDetection:
             chat = ChatInterface(mock_db)
             assert chat._is_follow_up_query("show my groceries") is False
 
+    def test_category_name_query_not_follow_up(self, mock_db):
+        """Test short query with category name is not follow-up."""
+        # "airtime" is a category but not in the hardcoded keywords
+        mock_db.get_all_categories.return_value = ["airtime", "groceries", "fuel"]
+        with patch('src.chat.ollama.Client'):
+            chat = ChatInterface(mock_db)
+            # Short query (≤5 words) with category name should NOT be follow-up
+            assert chat._is_follow_up_query("how much airtime?") is False
+
 
 class TestFollowUpContext:
     """Tests for follow-up query context handling."""
