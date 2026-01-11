@@ -55,6 +55,9 @@ Thumbs.db
 # Config with sensitive data (keep config.yaml.example)
 # config.yaml
 
+# Budget exports with sensitive dats
+*.json
+
 # Node.js / Frontend
 node_modules/
 frontend/dist/

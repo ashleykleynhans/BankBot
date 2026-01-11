@@ -211,7 +211,7 @@
       </div>
 
       <!-- Totals -->
-      <div class="grid grid-cols-2 gap-4 mb-6 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+      <div class="grid grid-cols-3 gap-4 mb-6 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
         <div>
           <div class="text-sm text-gray-500 dark:text-gray-400">Total Budgeted</div>
           <div class="text-xl font-bold text-gray-900 dark:text-gray-100">
@@ -222,6 +222,12 @@
           <div class="text-sm text-gray-500 dark:text-gray-400">Total Spent</div>
           <div class="text-xl font-bold {getProgressTextColor((budgetSummary.total_spent / budgetSummary.total_budgeted) * 100)}">
             {formatCurrency(budgetSummary.total_spent)}
+          </div>
+        </div>
+        <div>
+          <div class="text-sm text-gray-500 dark:text-gray-400">Total Available</div>
+          <div class="text-xl font-bold {budgetSummary.total_budgeted - budgetSummary.total_spent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
+            {formatCurrency(budgetSummary.total_budgeted - budgetSummary.total_spent)}
           </div>
         </div>
       </div>
