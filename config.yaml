@@ -65,6 +65,7 @@ categories:
   - vehicle_finance
   - vehicle_maintenance
   - vehicle_tracking
+  - vet
   - withdrawal
 
 # Classification rules (checked before LLM, case-insensitive)
@@ -116,6 +117,7 @@ classification_rules:
   "Nandos": fast_food
   "Ola At Rietvlei": fast_food
   "Pizza Hut": fast_food
+  "Pauls ": fast_food
   "Salsa Mexican Grill": fast_food
   "Starbucks": fast_food
   "Steers": fast_food
@@ -135,6 +137,7 @@ classification_rules:
   "Geo Payment": geo_payment
 
   # Groceries
+  "Alberton Meat": groceries
   "Woolworths": groceries
   "Checkers": groceries
   "Multisave": groceries
@@ -271,6 +274,7 @@ classification_rules:
 
   # Subscriptions
   "Anthropic": subscriptions
+  "Claude.Ai": subscriptions
   "DSTV": subscriptions
   "Esp Eskomsep": subscriptions
   "Google One": subscriptions
@@ -326,6 +330,11 @@ classification_rules:
 
   # Vehicle Maintenance
   "Alberton Tyre": vehicle_maintenance
+
+  # Vet
+  "Vet": vet
+  "Animal Clinic": vet
+  "Animal Hospital": vet
 
   # Electricity
   "Eskom": electricity
