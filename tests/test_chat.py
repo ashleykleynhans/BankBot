@@ -312,6 +312,93 @@ class TestBuildContext:
         assert "TOTAL SPENT" not in context
         assert "TOTAL RECEIVED" not in context
 
+    def test_build_context_price_increase_query(self, chat, mock_db):
+        """Test price change query includes detected price change."""
+        transactions = [
+            {"date": "2025-03-01", "description": "Spotify", "amount": 99.99, "category": "subscriptions", "transaction_type": "debit"},
+            {"date": "2025-04-01", "description": "Spotify", "amount": 99.99, "category": "subscriptions", "transaction_type": "debit"},
+            {"date": "2025-05-01", "description": "Spotify", "amount": 119.99, "category": "subscriptions", "transaction_type": "debit"},
+        ]
+
+        context = chat._build_context(transactions, "when did the spotify price increase")
+
+        assert "PRICE INCREASED in 2025-05 from R99.99 to R119.99" in context
+
+    def test_build_context_price_change_no_change(self, chat, mock_db):
+        """Test price change query when no change detected."""
+        transactions = [
+            {"date": "2025-03-01", "description": "Spotify", "amount": 99.99, "category": "subscriptions", "transaction_type": "debit"},
+            {"date": "2025-04-01", "description": "Spotify", "amount": 99.99, "category": "subscriptions", "transaction_type": "debit"},
+        ]
+
+        context = chat._build_context(transactions, "when did the spotify price change")
+
+        assert "NO PRICE CHANGE DETECTED" in context
+
+
+class TestPriceChangeDetection:
+    """Tests for price change detection."""
+
+    def test_detect_price_increase(self, chat):
+        """Test detecting a price increase."""
+        transactions = [
+            {"date": "2025-08-01", "amount": 99.99},
+            {"date": "2025-09-01", "amount": 119.99},
+            {"date": "2025-10-01", "amount": 119.99},
+        ]
+
+        result = chat._detect_price_change(transactions)
+
+        assert result == "PRICE INCREASED in 2025-09 from R99.99 to R119.99"
+
+    def test_detect_price_decrease(self, chat):
+        """Test detecting a price decrease."""
+        transactions = [
+            {"date": "2025-08-01", "amount": 119.99},
+            {"date": "2025-09-01", "amount": 99.99},
+        ]
+
+        result = chat._detect_price_change(transactions)
+
+        assert result == "PRICE DECREASED in 2025-09 from R119.99 to R99.99"
+
+    def test_detect_no_price_change(self, chat):
+        """Test no change when amounts are same."""
+        transactions = [
+            {"date": "2025-08-01", "amount": 99.99},
+            {"date": "2025-09-01", "amount": 99.99},
+            {"date": "2025-10-01", "amount": 99.99},
+        ]
+
+        result = chat._detect_price_change(transactions)
+
+        assert result is None
+
+    def test_detect_price_change_empty_list(self, chat):
+        """Test with empty transaction list."""
+        result = chat._detect_price_change([])
+        assert result is None
+
+    def test_detect_price_change_single_transaction(self, chat):
+        """Test with single transaction."""
+        transactions = [{"date": "2025-08-01", "amount": 99.99}]
+        result = chat._detect_price_change(transactions)
+        assert result is None
+
+    def test_detect_price_change_unsorted_input(self, chat):
+        """Test that unsorted transactions are handled correctly."""
+        # Input is not sorted - function should sort it
+        transactions = [
+            {"date": "2025-10-01", "amount": 119.99},
+            {"date": "2025-08-01", "amount": 99.99},
+            {"date": "2025-09-01", "amount": 119.99},
+        ]
+
+        result = chat._detect_price_change(transactions)
+
+        # Should detect change in Sept (first occurrence of new price when sorted)
+        assert result == "PRICE INCREASED in 2025-09 from R99.99 to R119.99"
+
 
 class TestConversationHistory:
     """Tests for conversation history management."""

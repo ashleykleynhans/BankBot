@@ -322,6 +322,28 @@ class ChatInterface:
 
         return terms
 
+    def _detect_price_change(self, transactions: list[dict]) -> str | None:
+        """Detect price changes in recurring transactions (e.g., subscriptions)."""
+        if not transactions or len(transactions) < 2:
+            return None
+
+        # Sort by date and get unique amounts
+        sorted_txs = sorted(transactions, key=lambda x: x.get("date", ""))
+        amounts = [(tx.get("date", "")[:7], tx.get("amount", 0)) for tx in sorted_txs]
+
+        # Find where amount changed
+        prev_amount = None
+        for i, (month, amount) in enumerate(amounts):
+            if prev_amount is not None and amount != prev_amount:
+                # Found a change - determine if increase or decrease
+                if amount > prev_amount:
+                    return f"PRICE INCREASED in {month} from R{prev_amount:.2f} to R{amount:.2f}"
+                else:
+                    return f"PRICE DECREASED in {month} from R{prev_amount:.2f} to R{amount:.2f}"
+            prev_amount = amount
+
+        return None
+
     def _build_context(self, transactions: list[dict], query: str) -> str:
         """Build context string for LLM from transactions."""
         stats = self.db.get_stats()
@@ -329,6 +351,7 @@ class ChatInterface:
         is_budget_query = "budget" in query_lower
         # Skip totals for "when last" type queries - they only want the most recent
         is_when_last_query = "when last" in query_lower or "last time" in query_lower
+        is_price_change_query = "price" in query_lower and ("increase" in query_lower or "change" in query_lower or "go up" in query_lower)
 
         # For non-budget queries with no transactions, return early
         if not transactions and not is_budget_query:
@@ -340,6 +363,14 @@ class ChatInterface:
 
         if transactions:
             context_parts.append(f"Found {len(transactions)} potentially relevant transactions.")
+
+        # For price change queries, detect and include the answer
+        if is_price_change_query and transactions:
+            price_change = self._detect_price_change(transactions)
+            if price_change:
+                context_parts.append(f"\n>>> {price_change} <<<")
+            else:
+                context_parts.append("\n>>> NO PRICE CHANGE DETECTED - amount stayed the same <<<")
 
         # If query is about budget, include budget info
         if is_budget_query:
@@ -381,16 +412,19 @@ class ChatInterface:
 
         # Only include transactions section if there are transactions
         if transactions:
-            # Count debits and credits
-            debit_count = sum(1 for tx in transactions[:15] if tx.get("transaction_type") == "debit")
-            credit_count = sum(1 for tx in transactions[:15] if tx.get("transaction_type") == "credit")
+            # Sort by date (oldest first) so LLM can see chronological patterns
+            sorted_txs = sorted(transactions, key=lambda x: x.get("date", ""))
 
-            context_parts.append(f"\n{len(transactions[:15])} transactions ({debit_count} payments, {credit_count} deposits):")
+            # Count debits and credits
+            debit_count = sum(1 for tx in sorted_txs[:15] if tx.get("transaction_type") == "debit")
+            credit_count = sum(1 for tx in sorted_txs[:15] if tx.get("transaction_type") == "credit")
+
+            context_parts.append(f"\n{len(sorted_txs[:15])} transactions ({debit_count} payments, {credit_count} deposits):")
 
             # Limit to most relevant transactions for context
             total_debits = 0.0
             total_credits = 0.0
-            for tx in transactions[:15]:
+            for tx in sorted_txs[:15]:
                 date = tx.get("date", "Unknown")
                 desc = tx.get("description", "")[:50]
                 amount = tx.get("amount", 0)
@@ -409,7 +443,7 @@ class ChatInterface:
                 line += f" | R{abs(amount):,.2f} {tx_type} | {category}"
                 context_parts.append(line)
 
-            if len(transactions) > 15:
+            if len(sorted_txs) > 15:
                 context_parts.append(f"\n... and {len(transactions) - 15} more transactions")
 
             # Provide pre-calculated totals - but skip for "when last" queries
@@ -436,6 +470,10 @@ When answering questions about spending or transactions:
 - CRITICAL: The context ends with ">>> Y PAYMENTS TOTALING: R27,030.98 <<<" - copy this EXACT amount including cents
 - NEVER do math - NEVER add up amounts - NEVER round - just COPY the total from context
 - For medical/doctor transactions: say "the doctor", not names from payment references
+
+For price change/increase questions:
+- Context will contain ">>> PRICE INCREASED in YYYY-MM from RX to RY <<<"
+- Just copy this info into a natural response, e.g. "The price increased in September 2025 from R99.99 to R119.99"
 
 For budget questions:
 - If asked about a SPECIFIC category (e.g. "medical budget", "groceries budget"):
