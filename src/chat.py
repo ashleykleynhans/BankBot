@@ -248,6 +248,17 @@ class ChatInterface:
 
         # Extract potential search terms
         search_terms = self._extract_search_terms(query)
+
+        # First try multi-word phrases (e.g., "ceiling repairs" not just "ceiling")
+        if len(search_terms) >= 2:
+            # Try pairs of consecutive terms as phrases
+            for i in range(len(search_terms) - 1):
+                phrase = f"{search_terms[i]} {search_terms[i+1]}"
+                results = self.db.search_transactions(phrase)
+                if results:
+                    return limit_if_when_last(results)
+
+        # Fall back to individual terms
         for term in search_terms:
             # Try original term
             results = self.db.search_transactions(term)
@@ -354,7 +365,11 @@ class ChatInterface:
 
         # Only include transactions section if there are transactions
         if transactions:
-            context_parts.append("\nRelevant transactions:")
+            # Count debits and credits
+            debit_count = sum(1 for tx in transactions[:15] if tx.get("transaction_type") == "debit")
+            credit_count = sum(1 for tx in transactions[:15] if tx.get("transaction_type") == "credit")
+
+            context_parts.append(f"\n{len(transactions[:15])} transactions ({debit_count} payments, {credit_count} deposits):")
 
             # Limit to most relevant transactions for context
             total_debits = 0.0
@@ -383,7 +398,7 @@ class ChatInterface:
 
             # Provide pre-calculated totals - but skip for "when last" queries
             if not is_when_last_query:
-                context_parts.append(f"\n>>> TOTAL SPENT: R{total_debits:,.2f} | TOTAL RECEIVED: R{total_credits:,.2f} <<<")
+                context_parts.append(f"\n>>> {debit_count} PAYMENTS TOTALING: R{total_debits:,.2f} | {credit_count} DEPOSITS TOTALING: R{total_credits:,.2f} <<<")
 
         return "\n".join(context_parts)
 
@@ -401,20 +416,19 @@ Always address the user as "you"/"your", never "the user".
 For greetings (hi, hello, hey, etc.), respond with a friendly greeting and offer to help with their transactions. Don't list transaction data for greetings.
 
 When answering questions about spending or transactions:
-- List EVERY transaction from the context - do NOT summarize, aggregate, or combine transactions
-- NEVER say things like "(x3)" or "3 transactions of R83" - list each one separately
-- CRITICAL: Use the ">>> TOTAL SPENT" value from context - NEVER add up amounts yourself (you will get it wrong)
-- Required format - list each transaction on its own line:
-  "You paid R14,713.00 to John Doe:
-  - 03 Nov 2025: Send Money App Dr Send John Doe - R1,000.00
-  - 30 Oct 2025: Internet Pmt To John Car Repairs - R1,800.00
-  - 03 Oct 2025: FNB App Payment To John - R5,000.00
-  - 30 Sep 2025: Send Money App Dr Send John Doe - R83.00
-  - 30 Sep 2025: Send Money App Dr Send John Doe - R3,000.00
-  - 30 Sep 2025: Send Money App Dr Send John Doe - R3,000.00"
-- Even if transactions have the same date and description, list each one separately
-- Never skip transactions or combine them
-- For medical/doctor transactions: Do NOT extract names from payment references - just say "the doctor", "the cardiologist", "the dentist" etc. Payment references often contain the payer's name, not the recipient.
+- Context shows "X transactions (Y payments, Z deposits)" - you MUST list exactly Y payments
+- CRITICAL: Copy the total from ">>> Y PAYMENTS TOTALING: R... <<<" - NEVER calculate yourself
+- List ALL transactions in a SINGLE FLAT LIST - one line per transaction, no grouping
+- NEVER use "(x2)", "(x3)", "twice", "3 times" etc - list each separately
+- Example for 6 payments totaling R14,713.00:
+  "You spent R14,713.00 (6 payments):
+  - 2025-11-03: Send Money App Dr Send John Doe - R1,000.00
+  - 2025-10-30: Internet Pmt To John Car Repairs - R1,800.00
+  - 2025-10-03: FNB App Payment To John - R5,000.00
+  - 2025-09-30: Send Money App Dr Send John Doe - R83.00
+  - 2025-09-30: Send Money App Dr Send John Doe - R3,000.00
+  - 2025-09-30: Send Money App Dr Send John Doe - R3,000.00"
+- For medical/doctor transactions: say "the doctor", not names from payment references
 
 For budget questions:
 - CRITICAL: Copy the EXACT numbers from the budget context CHARACTER-FOR-CHARACTER including commas

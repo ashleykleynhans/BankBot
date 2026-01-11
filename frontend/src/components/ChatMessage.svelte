@@ -47,20 +47,25 @@
       'by <span class="text-red-500 font-semibold">$1</span>'
     );
 
-    // Format TOTAL SPENT/RECEIVED lines nicely (remove >>> <<< markers)
+    // Format PAYMENTS TOTALING/DEPOSITS TOTALING lines nicely (remove >>> <<< markers)
     formatted = formatted.replace(
-      /&gt;&gt;&gt; TOTAL SPENT: (R[\d,\.]+) \| TOTAL RECEIVED: (R[\d,\.]+) &lt;&lt;&lt;/g,
+      /&gt;&gt;&gt; (\d+) PAYMENTS TOTALING: (R[\d,\.]+) \| (\d+) DEPOSITS TOTALING: (R[\d,\.]+) &lt;&lt;&lt;/g,
       '<div class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600 font-medium">' +
-        '<span class="text-red-500">Spent: $1</span> · ' +
-        '<span class="text-green-500">Received: $2</span></div>'
+        '<span class="text-red-500">$1 payments: $2</span> · ' +
+        '<span class="text-green-500">$3 deposits: $4</span></div>'
     );
 
-    // Handle TOTAL SPENT only (no received)
+    // Format OVERALL BUDGET TOTAL (remove >>> <<< markers)
     formatted = formatted.replace(
-      /&gt;&gt;&gt; TOTAL SPENT: (R[\d,\.]+) &lt;&lt;&lt;/g,
+      /&gt;&gt;&gt; OVERALL BUDGET TOTAL: (R[\d,\.]+) budgeted, (R[\d,\.]+) spent, (R-?[\d,\.]+) remaining &lt;&lt;&lt;/g,
       '<div class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600 font-medium">' +
-        '<span class="text-red-500">Total Spent: $1</span></div>'
+        'Budget: $1 · <span class="text-red-500">Spent: $2</span> · ' +
+        '<span class="text-green-500">Remaining: $3</span></div>'
     );
+
+    // Strip any remaining >>> <<< markers the LLM might have copied
+    formatted = formatted.replace(/&gt;&gt;&gt;/g, '');
+    formatted = formatted.replace(/&lt;&lt;&lt;/g, '');
 
     return formatted;
   }

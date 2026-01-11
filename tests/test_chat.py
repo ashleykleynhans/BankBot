@@ -290,9 +290,9 @@ class TestBuildContext:
 
         assert "10,000.00" in context
         assert "500.00" in context
-        # Check pre-calculated totals include credits
-        assert "TOTAL SPENT: R500.00" in context
-        assert "TOTAL RECEIVED: R10,000.00" in context
+        # Check pre-calculated totals include counts and amounts
+        assert "1 PAYMENTS TOTALING: R500.00" in context
+        assert "1 DEPOSITS TOTALING: R10,000.00" in context
 
     def test_build_context_when_last_skips_totals(self, chat, mock_db):
         """Test 'when last' queries don't show totals."""
