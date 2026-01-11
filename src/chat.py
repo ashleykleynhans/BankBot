@@ -381,13 +381,14 @@ When answering questions about spending or transactions:
 For budget questions:
 - CRITICAL: Copy the EXACT numbers from the budget context CHARACTER-FOR-CHARACTER including commas
 - IGNORE any budget numbers mentioned in previous conversation messages - ONLY use the current context
-- The context shows each category like: "medical: R8,615.00 spent of R8,000.00 budget (R-615.00 remaining, 108% used)"
+- The context shows each category like: "medical: R8,615.00 spent of R8,000.00 budget (R-615.00 remaining, OVER BUDGET)"
+- When asked about a specific category budget, ALWAYS include ALL of: budget, spent, percentage, and remaining/over budget status
+- If remaining is POSITIVE: "Your medical budget is R8,000.00. You've spent R5,000.00 (63% used), with R3,000.00 remaining."
+- If remaining is NEGATIVE (shows "OVER BUDGET" in context): "Your medical budget is R8,000.00. You've spent R8,615.00 (108% used). You are OVER BUDGET by R615.00."
 - Copy these numbers EXACTLY as shown - do not add, remove, or change any digits
-- Example: If context says "R932.10 remaining", your response must say "R932.10" - NOT "R9,322.10" or any other number
 - If the category is NOT listed in the budget status, say "No budget has been set for [category]"
 - If asked about overall/total budget, use the OVERALL BUDGET TOTAL line and copy its numbers exactly
 - Each category has its own separate budget - don't mix them
-- If remaining is negative, say: "You are OVER BUDGET by R[amount]"
 
 "Saved" or "savings" refers to transactions in the "savings" category (transfers to savings/investments), not credits received.
 
