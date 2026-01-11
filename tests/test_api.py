@@ -782,3 +782,77 @@ class TestBudgetEndpoints:
         # Should show 0 actual spending
         assert data["items"][0]["actual"] == 0
         assert data["items"][0]["percentage"] == 0
+
+    def test_export_budgets(self, client, mock_db, mock_config):
+        """Test exporting all budgets."""
+        mock_db.get_all_budgets.return_value = [
+            {"id": 1, "category": "groceries", "amount": 10000.00},
+            {"id": 2, "category": "fuel", "amount": 5000.00},
+        ]
+
+        response = client.get("/api/v1/budgets/export")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["budgets"]) == 2
+        assert data["budgets"][0]["category"] == "groceries"
+        assert data["budgets"][0]["amount"] == 10000.00
+        assert data["budgets"][1]["category"] == "fuel"
+        assert data["budgets"][1]["amount"] == 5000.00
+
+    def test_export_budgets_empty(self, client, mock_db, mock_config):
+        """Test exporting when no budgets exist."""
+        mock_db.get_all_budgets.return_value = []
+
+        response = client.get("/api/v1/budgets/export")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["budgets"] == []
+
+    def test_import_budgets(self, client, mock_db, mock_config):
+        """Test importing budgets."""
+        mock_db.delete_all_budgets.return_value = 2
+        mock_db.upsert_budget.return_value = 1
+
+        response = client.post(
+            "/api/v1/budgets/import",
+            json={
+                "budgets": [
+                    {"category": "groceries", "amount": 10000.00},
+                    {"category": "fuel", "amount": 5000.00},
+                ]
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["imported"] == 2
+        assert data["deleted"] == 2
+        assert mock_db.upsert_budget.call_count == 2
+
+    def test_import_budgets_negative_amount(self, client, mock_db, mock_config):
+        """Test importing budget with negative amount fails."""
+        response = client.post(
+            "/api/v1/budgets/import",
+            json={
+                "budgets": [
+                    {"category": "groceries", "amount": -100.00},
+                ]
+            }
+        )
+
+        assert response.status_code == 400
+        assert "positive" in response.json()["detail"]
+        mock_db.delete_all_budgets.assert_not_called()
+
+    def test_delete_all_budgets(self, client, mock_db, mock_config):
+        """Test deleting all budgets."""
+        mock_db.delete_all_budgets.return_value = 3
+
+        response = client.delete("/api/v1/budgets")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["deleted"] == 3

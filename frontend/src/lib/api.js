@@ -161,3 +161,29 @@ export async function deleteBudget(category) {
     method: 'DELETE',
   });
 }
+
+/**
+ * Export all budgets as JSON.
+ */
+export async function exportBudgets() {
+  return fetchJSON(`${BASE_URL}/budgets/export`);
+}
+
+/**
+ * Import budgets from JSON (replaces all existing budgets).
+ */
+export async function importBudgets(budgets) {
+  return fetchJSON(`${BASE_URL}/budgets/import`, {
+    method: 'POST',
+    body: JSON.stringify({ budgets }),
+  });
+}
+
+/**
+ * Delete all budgets.
+ */
+export async function deleteAllBudgets() {
+  return fetchJSON(`${BASE_URL}/budgets`, {
+    method: 'DELETE',
+  });
+}

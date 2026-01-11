@@ -135,6 +135,32 @@ class BudgetSummaryResponse(BaseModel):
     total_spent: float
 
 
+class BudgetExportItem(BaseModel):
+    """Single budget entry for export/import."""
+
+    category: str
+    amount: float
+
+
+class BudgetExportResponse(BaseModel):
+    """Response for budget export."""
+
+    budgets: list[BudgetExportItem]
+
+
+class BudgetImportRequest(BaseModel):
+    """Request to import budgets."""
+
+    budgets: list[BudgetExportItem]
+
+
+class BudgetImportResponse(BaseModel):
+    """Response for budget import."""
+
+    imported: int
+    deleted: int
+
+
 # Analytics models
 class StatementInfo(BaseModel):
     """Basic statement information."""

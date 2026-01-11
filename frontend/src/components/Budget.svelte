@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { getBudgets, getBudgetSummary, createBudget, updateBudget, deleteBudget, getCategories } from '../lib/api.js';
+  import { getBudgets, getBudgetSummary, createBudget, updateBudget, deleteBudget, getCategories, exportBudgets, importBudgets } from '../lib/api.js';
   import { formatCurrency } from '../lib/stores.js';
 
   let budgets = [];
@@ -17,6 +17,11 @@
   // Edit state
   let editingCategory = null;
   let editAmount = '';
+
+  // Import/export state
+  let importing = false;
+  let exporting = false;
+  let fileInput;
 
   onMount(async () => {
     await loadData();
@@ -119,6 +124,79 @@
     return 'text-green-600 dark:text-green-400';
   }
 
+  async function handleExport() {
+    exporting = true;
+    error = null;
+
+    try {
+      const data = await exportBudgets();
+      const json = JSON.stringify(data.budgets, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'budgets.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      error = err.message;
+    } finally {
+      exporting = false;
+    }
+  }
+
+  function triggerImport() {
+    fileInput.click();
+  }
+
+  async function handleImport(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    importing = true;
+    error = null;
+
+    try {
+      const text = await file.text();
+      let budgetsToImport;
+
+      try {
+        const parsed = JSON.parse(text);
+        // Handle both array format and {budgets: [...]} format
+        budgetsToImport = Array.isArray(parsed) ? parsed : parsed.budgets;
+      } catch {
+        throw new Error('Invalid JSON file');
+      }
+
+      if (!Array.isArray(budgetsToImport)) {
+        throw new Error('Invalid budget format: expected array of budgets');
+      }
+
+      // Validate structure
+      for (const budget of budgetsToImport) {
+        if (!budget.category || typeof budget.amount !== 'number') {
+          throw new Error('Invalid budget entry: each budget must have "category" and "amount"');
+        }
+      }
+
+      if (!confirm(`Import ${budgetsToImport.length} budget(s)? This will replace all existing budgets.`)) {
+        return;
+      }
+
+      const result = await importBudgets(budgetsToImport);
+      await loadData();
+      alert(`Imported ${result.imported} budget(s). ${result.deleted > 0 ? `Replaced ${result.deleted} existing budget(s).` : ''}`);
+    } catch (err) {
+      error = err.message;
+    } finally {
+      importing = false;
+      // Reset file input so the same file can be selected again
+      event.target.value = '';
+    }
+  }
+
   // Categories that don't have budgets yet
   $: availableCategories = categories.filter(
     cat => !budgets.find(b => b.category === cat)
@@ -134,7 +212,41 @@
 </script>
 
 <div class="p-6 h-full overflow-y-auto">
-  <h1 class="text-2xl font-bold mb-6 text-gray-800 dark:text-gray-100">Budget</h1>
+  <div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">Budget</h1>
+    <div class="flex gap-2">
+      <!-- Hidden file input for import -->
+      <input
+        type="file"
+        accept=".json"
+        bind:this={fileInput}
+        on:change={handleImport}
+        class="hidden"
+      />
+      <button
+        on:click={triggerImport}
+        disabled={importing}
+        class="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors disabled:opacity-50"
+        title="Import budgets from JSON file"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+        {importing ? 'Importing...' : 'Import'}
+      </button>
+      <button
+        on:click={handleExport}
+        disabled={exporting || budgets.length === 0}
+        class="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors disabled:opacity-50"
+        title="Export budgets to JSON file"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+        {exporting ? 'Exporting...' : 'Export'}
+      </button>
+    </div>
+  </div>
 
   {#if error}
     <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-400 mb-6">

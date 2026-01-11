@@ -1,9 +1,13 @@
 """REST endpoints for budget management."""
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from ..models import (
     BudgetCreate,
+    BudgetExportResponse,
+    BudgetImportRequest,
+    BudgetImportResponse,
     BudgetListResponse,
     BudgetResponse,
     BudgetSummaryItem,
@@ -131,3 +135,53 @@ async def get_budget_summary(request: Request) -> BudgetSummaryResponse:
         total_budgeted=total_budgeted,
         total_spent=total_spent
     )
+
+
+@router.get("/budgets/export", response_model=BudgetExportResponse)
+async def export_budgets(request: Request) -> BudgetExportResponse:
+    """Export all budgets as JSON."""
+    db = request.app.state.db
+    budgets = db.get_all_budgets()
+
+    return BudgetExportResponse(
+        budgets=[{"category": b["category"], "amount": b["amount"]} for b in budgets]
+    )
+
+
+@router.post("/budgets/import", response_model=BudgetImportResponse)
+async def import_budgets(
+    request: Request,
+    data: BudgetImportRequest
+) -> BudgetImportResponse:
+    """Import budgets from JSON, replacing all existing budgets."""
+    db = request.app.state.db
+
+    # Validate all budgets first
+    for budget in data.budgets:
+        if budget.amount < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Budget amount for '{budget.category}' must be positive"
+            )
+
+    # Clear existing budgets
+    deleted_count = db.delete_all_budgets()
+
+    # Import new budgets
+    imported_count = 0
+    for budget in data.budgets:
+        db.upsert_budget(budget.category, budget.amount)
+        imported_count += 1
+
+    return BudgetImportResponse(
+        imported=imported_count,
+        deleted=deleted_count
+    )
+
+
+@router.delete("/budgets")
+async def delete_all_budgets(request: Request) -> dict:
+    """Delete all budgets."""
+    db = request.app.state.db
+    deleted = db.delete_all_budgets()
+    return {"success": True, "deleted": deleted}
