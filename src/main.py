@@ -452,6 +452,11 @@ def cmd_import_budget(args: argparse.Namespace, config: dict) -> None:
 
     db = Database(config["paths"]["database"])
 
+    # Clear existing budgets before importing
+    deleted = db.delete_all_budgets()
+    if deleted > 0:
+        console.print(f"[dim]Cleared {deleted} existing budget(s)[/dim]")
+
     imported = 0
     for budget in budgets:
         category = budget.get("category")

@@ -364,6 +364,23 @@ class TestBudgetOperations:
         deleted = db.delete_budget("nonexistent")
         assert deleted is False
 
+    def test_delete_all_budgets(self, db):
+        """Test deleting all budgets."""
+        db.upsert_budget("groceries", 10000.00)
+        db.upsert_budget("fuel", 5000.00)
+        db.upsert_budget("entertainment", 2000.00)
+
+        deleted = db.delete_all_budgets()
+        assert deleted == 3
+
+        budgets = db.get_all_budgets()
+        assert len(budgets) == 0
+
+    def test_delete_all_budgets_empty(self, db):
+        """Test deleting all budgets when none exist."""
+        deleted = db.delete_all_budgets()
+        assert deleted == 0
+
 
 class TestDeleteStatement:
     """Tests for delete_statement_by_filename method."""

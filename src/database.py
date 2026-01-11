@@ -413,3 +413,9 @@ class Database:
                 (category,)
             )
             return cursor.rowcount > 0
+
+    def delete_all_budgets(self) -> int:
+        """Delete all budgets. Returns number of budgets deleted."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("DELETE FROM budgets")
+            return cursor.rowcount

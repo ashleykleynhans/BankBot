@@ -1011,8 +1011,9 @@ class TestCmdImportBudget:
 
     @patch('src.main.Database')
     def test_import_budget_json(self, mock_db_class, mock_config, tmp_path):
-        """Test importing budgets from JSON."""
+        """Test importing budgets from JSON clears existing budgets first."""
         mock_db = MagicMock()
+        mock_db.delete_all_budgets.return_value = 0
         mock_db_class.return_value = mock_db
 
         input_file = tmp_path / "budgets.json"
@@ -1026,12 +1027,15 @@ class TestCmdImportBudget:
         args = argparse.Namespace(input=str(input_file))
         cmd_import_budget(args, mock_config)
 
+        # Should clear existing budgets first
+        mock_db.delete_all_budgets.assert_called_once()
         assert mock_db.upsert_budget.call_count == 2
 
     @patch('src.main.Database')
     def test_import_budget_yaml(self, mock_db_class, mock_config, tmp_path):
-        """Test importing budgets from YAML."""
+        """Test importing budgets from YAML clears existing budgets first."""
         mock_db = MagicMock()
+        mock_db.delete_all_budgets.return_value = 3  # Simulate clearing 3 existing
         mock_db_class.return_value = mock_db
 
         input_file = tmp_path / "budgets.yaml"
@@ -1044,6 +1048,7 @@ class TestCmdImportBudget:
         args = argparse.Namespace(input=str(input_file))
         cmd_import_budget(args, mock_config)
 
+        mock_db.delete_all_budgets.assert_called_once()
         mock_db.upsert_budget.assert_called_once_with("groceries", 5000.0)
 
     def test_import_budget_file_not_found(self, mock_config, tmp_path):
@@ -1086,6 +1091,7 @@ class TestCmdImportBudget:
     def test_import_budget_invalid_entries(self, mock_db_class, mock_config, tmp_path):
         """Test importing skips invalid entries."""
         mock_db = MagicMock()
+        mock_db.delete_all_budgets.return_value = 0
         mock_db_class.return_value = mock_db
 
         input_file = tmp_path / "budgets.json"
