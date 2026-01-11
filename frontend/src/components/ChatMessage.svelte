@@ -138,6 +138,11 @@
     formatted = formatted.replace(/&gt;&gt;&gt;/g, '');
     formatted = formatted.replace(/&lt;&lt;&lt;/g, '');
 
+    // Strip any leaked context markers the LLM copied (like "Y PAYMENTS TOTALING: R...")
+    formatted = formatted.replace(/^\s*\d*\s*PAYMENTS TOTALING:.*$/gm, '');
+    formatted = formatted.replace(/^\s*\d*\s*DEPOSITS TOTALING:.*$/gm, '');
+    formatted = formatted.replace(/^\s*[XY]\s+PAYMENTS TOTALING:.*$/gm, '');
+
     // Format standalone transaction lines (debit/credit with type)
     // Pattern: "- 2025-09-05: R1,381.00 debit (payment)" or "2025-09-05: R381.00 credit (transfer)"
     formatted = formatted.replace(

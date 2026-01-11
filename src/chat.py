@@ -412,8 +412,8 @@ class ChatInterface:
 
         # Only include transactions section if there are transactions
         if transactions:
-            # Sort by date (oldest first) so LLM can see chronological patterns
-            sorted_txs = sorted(transactions, key=lambda x: x.get("date", ""))
+            # Sort by date (newest first) for display
+            sorted_txs = sorted(transactions, key=lambda x: x.get("date", ""), reverse=True)
 
             # Count debits and credits
             debit_count = sum(1 for tx in sorted_txs[:15] if tx.get("transaction_type") == "debit")
@@ -467,9 +467,13 @@ For greetings (hi, hello, hey, etc.), respond with a friendly greeting and offer
 
 When answering questions about spending or transactions:
 - Give a concise summary with the total amount
-- CRITICAL: The context ends with ">>> Y PAYMENTS TOTALING: R27,030.98 <<<" - copy this EXACT amount including cents
-- NEVER do math - NEVER add up amounts - NEVER round - just COPY the total from context
+- Use the specific name/term from the user's question (e.g. "Chanel Smith", "Spotify", "groceries") - NEVER say "various recipients"
+- The context shows ">>> X PAYMENTS TOTALING: R27,030.98 <<<" - COPY this amount EXACTLY including the cents
+- NEVER round! R27,030.98 must stay R27,030.98, NOT R27,031.00
+- NEVER do your own math - just copy the total from context
 - For medical/doctor transactions: say "the doctor", not names from payment references
+- If user says "list", just give the total - do NOT list individual transactions (they can click "Show transactions")
+- NEVER use (x2), (x3), "twice", etc - NEVER combine multiple amounts on one line
 
 For price change/increase questions:
 - Context will contain ">>> PRICE INCREASED in YYYY-MM from RX to RY <<<"
