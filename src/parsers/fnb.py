@@ -218,8 +218,8 @@ class FNBParser(BaseBankParser):
                         description = match.group(2).strip()
                         amount_str = match.group(3).strip()
 
-                        # Clean up description (remove OCR artifacts like |, [], {})
-                        description = re.sub(r"[|\[\]{}]", "", description).strip()
+                        # Clean up description (remove OCR artifacts like |, [], {}, _)
+                        description = re.sub(r"^[|\[\]{}_]+", "", description).strip()
 
                         # Skip if description is empty or just whitespace
                         if not description or description.isspace():

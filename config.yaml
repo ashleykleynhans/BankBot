@@ -183,6 +183,7 @@ classification_rules:
   "Webafrica": internet
 
   # Lotto & Powerball
+  "Lotto Winnings": deposit
   "Lotto": lotto
   "Powerball": lotto
 
@@ -332,7 +333,6 @@ classification_rules:
   "Credit/Deposit": deposit
   "Credit Voucher": deposit
   "FNB App Payment From": deposit
-  "Lotto Winnings": deposit
   "Payment From": deposit
   "Magtape Credit": deposit
   "Paypal Withdrawal": deposit
