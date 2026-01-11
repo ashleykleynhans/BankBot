@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Bank Statement Chat Bot - CLI Entry Point."""
-
 import argparse
+import json
 import re
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import pdfplumber
+import yaml
 from rich.console import Console
 from rich.table import Table
 
@@ -401,6 +401,72 @@ def cmd_reimport(args: argparse.Namespace, config: dict) -> None:
             sys.exit(1)
 
 
+def cmd_export_budget(args: argparse.Namespace, config: dict) -> None:
+    """Export budgets to a file."""
+    db = Database(config["paths"]["database"])
+    budgets = db.get_all_budgets()
+
+    if not budgets:
+        console.print("[yellow]No budgets to export[/yellow]")
+        return
+
+    # Prepare export data (just category and amount)
+    export_data = [{"category": b["category"], "amount": b["amount"]} for b in budgets]
+
+    output_path = Path(args.output)
+    file_format = args.format or output_path.suffix.lstrip(".") or "json"
+
+    if file_format in ("yaml", "yml"):
+        content = yaml.dump({"budgets": export_data}, default_flow_style=False, sort_keys=False)
+    else:
+        content = json.dumps({"budgets": export_data}, indent=2)
+
+    output_path.write_text(content)
+    console.print(f"[green]Exported {len(export_data)} budgets to {output_path}[/green]")
+
+
+def cmd_import_budget(args: argparse.Namespace, config: dict) -> None:
+    """Import budgets from a file."""
+    input_path = Path(args.input)
+
+    if not input_path.exists():
+        console.print(f"[red]File not found: {input_path}[/red]")
+        sys.exit(1)
+
+    content = input_path.read_text()
+    file_format = input_path.suffix.lstrip(".")
+
+    try:
+        if file_format in ("yaml", "yml"):
+            data = yaml.safe_load(content)
+        else:
+            data = json.loads(content)
+    except (yaml.YAMLError, json.JSONDecodeError) as e:
+        console.print(f"[red]Failed to parse file: {e}[/red]")
+        sys.exit(1)
+
+    budgets = data.get("budgets", [])
+    if not budgets:
+        console.print("[yellow]No budgets found in file[/yellow]")
+        return
+
+    db = Database(config["paths"]["database"])
+
+    imported = 0
+    for budget in budgets:
+        category = budget.get("category")
+        amount = budget.get("amount")
+
+        if not category or amount is None:
+            console.print(f"[yellow]Skipping invalid budget entry: {budget}[/yellow]")
+            continue
+
+        db.upsert_budget(category, float(amount))
+        imported += 1
+
+    console.print(f"[green]Imported {imported} budgets from {input_path}[/green]")
+
+
 def cmd_serve(args: argparse.Namespace, config: dict) -> None:
     """Start the API server."""
     import uvicorn
@@ -486,6 +552,15 @@ Examples:
     serve_parser.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
     serve_parser.add_argument("--port", type=int, default=8000, help="Port to bind to (default: 8000)")
 
+    # Export budget command
+    export_budget_parser = subparsers.add_parser("export-budget", help="Export budgets to a file")
+    export_budget_parser.add_argument("output", help="Output file path (e.g., budgets.json or budgets.yaml)")
+    export_budget_parser.add_argument("--format", choices=["json", "yaml"], help="Output format (auto-detected from extension)")
+
+    # Import budget command
+    import_budget_parser = subparsers.add_parser("import-budget", help="Import budgets from a file")
+    import_budget_parser.add_argument("input", help="Input file path (e.g., budgets.json or budgets.yaml)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -513,6 +588,8 @@ Examples:
         "rename": cmd_rename,
         "reimport": cmd_reimport,
         "serve": cmd_serve,
+        "export-budget": cmd_export_budget,
+        "import-budget": cmd_import_budget,
     }
 
     cmd_func = commands.get(args.command)

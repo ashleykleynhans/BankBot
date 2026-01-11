@@ -1,15 +1,18 @@
 """Tests for main CLI module."""
 
 import argparse
+import json
 import sys
 import pytest
+import yaml
 from unittest.mock import Mock, MagicMock, patch, mock_open
 from io import StringIO
 
 from src import main
 from src.main import (
     cmd_import, cmd_watch, cmd_chat, cmd_list,
-    cmd_categories, cmd_stats, cmd_search, cmd_parsers, cmd_rename, cmd_reimport, cmd_serve
+    cmd_categories, cmd_stats, cmd_search, cmd_parsers, cmd_rename, cmd_reimport, cmd_serve,
+    cmd_export_budget, cmd_import_budget
 )
 
 
@@ -926,3 +929,176 @@ class TestCmdServe:
         args = mock_cmd.call_args[0][0]
         assert args.host == "0.0.0.0"
         assert args.port == 3000
+
+
+class TestCmdExportBudget:
+    """Tests for cmd_export_budget function."""
+
+    @patch('src.main.Database')
+    def test_export_budget_json(self, mock_db_class, mock_config, tmp_path):
+        """Test exporting budgets to JSON."""
+        mock_db = MagicMock()
+        mock_db.get_all_budgets.return_value = [
+            {"category": "groceries", "amount": 5000.0},
+            {"category": "fuel", "amount": 2000.0},
+        ]
+        mock_db_class.return_value = mock_db
+
+        output_file = tmp_path / "budgets.json"
+        args = argparse.Namespace(output=str(output_file), format=None)
+
+        cmd_export_budget(args, mock_config)
+
+        assert output_file.exists()
+        data = json.loads(output_file.read_text())
+        assert len(data["budgets"]) == 2
+        assert data["budgets"][0]["category"] == "groceries"
+
+    @patch('src.main.Database')
+    def test_export_budget_yaml(self, mock_db_class, mock_config, tmp_path):
+        """Test exporting budgets to YAML."""
+        mock_db = MagicMock()
+        mock_db.get_all_budgets.return_value = [
+            {"category": "groceries", "amount": 5000.0},
+        ]
+        mock_db_class.return_value = mock_db
+
+        output_file = tmp_path / "budgets.yaml"
+        args = argparse.Namespace(output=str(output_file), format=None)
+
+        cmd_export_budget(args, mock_config)
+
+        assert output_file.exists()
+        data = yaml.safe_load(output_file.read_text())
+        assert len(data["budgets"]) == 1
+
+    @patch('src.main.Database')
+    def test_export_budget_format_override(self, mock_db_class, mock_config, tmp_path):
+        """Test exporting with explicit format override."""
+        mock_db = MagicMock()
+        mock_db.get_all_budgets.return_value = [
+            {"category": "groceries", "amount": 5000.0},
+        ]
+        mock_db_class.return_value = mock_db
+
+        output_file = tmp_path / "budgets.txt"  # Non-standard extension
+        args = argparse.Namespace(output=str(output_file), format="yaml")
+
+        cmd_export_budget(args, mock_config)
+
+        assert output_file.exists()
+        data = yaml.safe_load(output_file.read_text())
+        assert "budgets" in data
+
+    @patch('src.main.Database')
+    def test_export_budget_empty(self, mock_db_class, mock_config, tmp_path):
+        """Test exporting when no budgets exist."""
+        mock_db = MagicMock()
+        mock_db.get_all_budgets.return_value = []
+        mock_db_class.return_value = mock_db
+
+        output_file = tmp_path / "budgets.json"
+        args = argparse.Namespace(output=str(output_file), format=None)
+
+        cmd_export_budget(args, mock_config)
+
+        # File should not be created when no budgets
+        assert not output_file.exists()
+
+
+class TestCmdImportBudget:
+    """Tests for cmd_import_budget function."""
+
+    @patch('src.main.Database')
+    def test_import_budget_json(self, mock_db_class, mock_config, tmp_path):
+        """Test importing budgets from JSON."""
+        mock_db = MagicMock()
+        mock_db_class.return_value = mock_db
+
+        input_file = tmp_path / "budgets.json"
+        input_file.write_text(json.dumps({
+            "budgets": [
+                {"category": "groceries", "amount": 5000.0},
+                {"category": "fuel", "amount": 2000.0},
+            ]
+        }))
+
+        args = argparse.Namespace(input=str(input_file))
+        cmd_import_budget(args, mock_config)
+
+        assert mock_db.upsert_budget.call_count == 2
+
+    @patch('src.main.Database')
+    def test_import_budget_yaml(self, mock_db_class, mock_config, tmp_path):
+        """Test importing budgets from YAML."""
+        mock_db = MagicMock()
+        mock_db_class.return_value = mock_db
+
+        input_file = tmp_path / "budgets.yaml"
+        input_file.write_text(yaml.dump({
+            "budgets": [
+                {"category": "groceries", "amount": 5000.0},
+            ]
+        }))
+
+        args = argparse.Namespace(input=str(input_file))
+        cmd_import_budget(args, mock_config)
+
+        mock_db.upsert_budget.assert_called_once_with("groceries", 5000.0)
+
+    def test_import_budget_file_not_found(self, mock_config, tmp_path):
+        """Test importing from non-existent file."""
+        args = argparse.Namespace(input=str(tmp_path / "nonexistent.json"))
+
+        with pytest.raises(SystemExit) as exc:
+            cmd_import_budget(args, mock_config)
+
+        assert exc.value.code == 1
+
+    @patch('src.main.Database')
+    def test_import_budget_invalid_json(self, mock_db_class, mock_config, tmp_path):
+        """Test importing from invalid JSON file."""
+        input_file = tmp_path / "budgets.json"
+        input_file.write_text("not valid json {")
+
+        args = argparse.Namespace(input=str(input_file))
+
+        with pytest.raises(SystemExit) as exc:
+            cmd_import_budget(args, mock_config)
+
+        assert exc.value.code == 1
+
+    @patch('src.main.Database')
+    def test_import_budget_empty_budgets(self, mock_db_class, mock_config, tmp_path):
+        """Test importing file with no budgets."""
+        mock_db = MagicMock()
+        mock_db_class.return_value = mock_db
+
+        input_file = tmp_path / "budgets.json"
+        input_file.write_text(json.dumps({"budgets": []}))
+
+        args = argparse.Namespace(input=str(input_file))
+        cmd_import_budget(args, mock_config)
+
+        mock_db.upsert_budget.assert_not_called()
+
+    @patch('src.main.Database')
+    def test_import_budget_invalid_entries(self, mock_db_class, mock_config, tmp_path):
+        """Test importing skips invalid entries."""
+        mock_db = MagicMock()
+        mock_db_class.return_value = mock_db
+
+        input_file = tmp_path / "budgets.json"
+        input_file.write_text(json.dumps({
+            "budgets": [
+                {"category": "groceries", "amount": 5000.0},  # Valid
+                {"category": "fuel"},  # Missing amount
+                {"amount": 1000.0},  # Missing category
+            ]
+        }))
+
+        args = argparse.Namespace(input=str(input_file))
+        cmd_import_budget(args, mock_config)
+
+        # Only valid entry should be imported
+        assert mock_db.upsert_budget.call_count == 1
