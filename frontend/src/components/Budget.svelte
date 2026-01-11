@@ -24,6 +24,56 @@
   let clearing = false;
   let fileInput;
 
+  // Modal state
+  let modal = {
+    show: false,
+    type: 'confirm', // 'confirm' | 'info'
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    confirmClass: 'bg-blue-600 hover:bg-blue-700',
+    onConfirm: null
+  };
+
+  // Pending import data
+  let pendingImport = null;
+
+  function showConfirmModal(title, message, onConfirm, { confirmText = 'Confirm', danger = false } = {}) {
+    modal = {
+      show: true,
+      type: 'confirm',
+      title,
+      message,
+      confirmText,
+      confirmClass: danger ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700',
+      onConfirm
+    };
+  }
+
+  function showInfoModal(title, message) {
+    modal = {
+      show: true,
+      type: 'info',
+      title,
+      message,
+      confirmText: 'OK',
+      confirmClass: 'bg-blue-600 hover:bg-blue-700',
+      onConfirm: null
+    };
+  }
+
+  function closeModal() {
+    modal = { ...modal, show: false };
+    pendingImport = null;
+  }
+
+  function handleModalConfirm() {
+    if (modal.onConfirm) {
+      modal.onConfirm();
+    }
+    closeModal();
+  }
+
   onMount(async () => {
     await loadData();
   });
@@ -65,15 +115,20 @@
     }
   }
 
-  async function handleDelete(category) {
-    if (!confirm(`Delete budget for ${formatCategoryName(category)}?`)) return;
-
-    try {
-      await deleteBudget(category);
-      await loadData();
-    } catch (err) {
-      error = err.message;
-    }
+  function handleDelete(category) {
+    showConfirmModal(
+      'Delete Budget',
+      `Are you sure you want to delete the budget for ${formatCategoryName(category)}?`,
+      async () => {
+        try {
+          await deleteBudget(category);
+          await loadData();
+        } catch (err) {
+          error = err.message;
+        }
+      },
+      { confirmText: 'Delete', danger: true }
+    );
   }
 
   function startEdit(category, currentAmount) {
@@ -132,15 +187,46 @@
     try {
       const data = await exportBudgets();
       const json = JSON.stringify(data.budgets, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'budgets.json';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+
+      // Generate default filename with date
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10);
+      const defaultFilename = `bankbot-budget-export-${dateStr}.json`;
+
+      // Try to use File System Access API for save dialog
+      if ('showSaveFilePicker' in window) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: defaultFilename,
+            types: [{
+              description: 'JSON Files',
+              accept: { 'application/json': ['.json'] }
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(json);
+          await writable.close();
+          showInfoModal('Export Complete', `Successfully exported ${data.budgets.length} budget(s).`);
+        } catch (err) {
+          // User cancelled the save dialog
+          if (err.name === 'AbortError') {
+            return;
+          }
+          throw err;
+        }
+      } else {
+        // Fallback for browsers without File System Access API
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = defaultFilename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showInfoModal('Export Complete', `Successfully exported ${data.budgets.length} budget(s).`);
+      }
     } catch (err) {
       error = err.message;
     } finally {
@@ -156,7 +242,6 @@
     const file = event.target.files?.[0];
     if (!file) return;
 
-    importing = true;
     error = null;
 
     try {
@@ -182,36 +267,62 @@
         }
       }
 
-      if (!confirm(`Import ${budgetsToImport.length} budget(s)? This will replace all existing budgets.`)) {
-        return;
-      }
-
-      const result = await importBudgets(budgetsToImport);
-      await loadData();
-      alert(`Imported ${result.imported} budget(s). ${result.deleted > 0 ? `Replaced ${result.deleted} existing budget(s).` : ''}`);
+      // Store pending import and show confirmation
+      pendingImport = budgetsToImport;
+      showConfirmModal(
+        'Import Budgets',
+        `Import ${budgetsToImport.length} budget(s)? This will replace all existing budgets.`,
+        executeImport,
+        { confirmText: 'Import' }
+      );
     } catch (err) {
       error = err.message;
     } finally {
-      importing = false;
       // Reset file input so the same file can be selected again
       event.target.value = '';
     }
   }
 
-  async function handleClearAll() {
-    if (!confirm(`Delete all ${budgets.length} budget(s)? This cannot be undone.`)) return;
+  async function executeImport() {
+    if (!pendingImport) return;
 
-    clearing = true;
+    importing = true;
     error = null;
 
     try {
-      const result = await deleteAllBudgets();
+      const result = await importBudgets(pendingImport);
       await loadData();
+      showInfoModal(
+        'Import Complete',
+        `Successfully imported ${result.imported} budget(s).${result.deleted > 0 ? ` Replaced ${result.deleted} existing budget(s).` : ''}`
+      );
     } catch (err) {
       error = err.message;
     } finally {
-      clearing = false;
+      importing = false;
+      pendingImport = null;
     }
+  }
+
+  function handleClearAll() {
+    showConfirmModal(
+      'Clear All Budgets',
+      `Are you sure you want to delete all ${budgets.length} budget(s)? This cannot be undone.`,
+      async () => {
+        clearing = true;
+        error = null;
+
+        try {
+          await deleteAllBudgets();
+          await loadData();
+        } catch (err) {
+          error = err.message;
+        } finally {
+          clearing = false;
+        }
+      },
+      { confirmText: 'Delete All', danger: true }
+    );
   }
 
   // Categories that don't have budgets yet
@@ -227,6 +338,49 @@
     }
   }
 </script>
+
+<!-- Modal -->
+{#if modal.show}
+  <div class="fixed inset-0 z-50 flex items-center justify-center">
+    <!-- Backdrop -->
+    <div
+      class="absolute inset-0 bg-black/50 backdrop-blur-sm"
+      on:click={closeModal}
+      on:keydown={(e) => e.key === 'Escape' && closeModal()}
+      role="button"
+      tabindex="0"
+    ></div>
+
+    <!-- Modal content -->
+    <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+      <div class="p-6">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+          {modal.title}
+        </h3>
+        <p class="text-gray-600 dark:text-gray-400">
+          {modal.message}
+        </p>
+      </div>
+
+      <div class="flex justify-end gap-3 px-6 py-4 bg-gray-50 dark:bg-gray-700/50">
+        {#if modal.type === 'confirm'}
+          <button
+            on:click={closeModal}
+            class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-500 transition-colors"
+          >
+            Cancel
+          </button>
+        {/if}
+        <button
+          on:click={handleModalConfirm}
+          class="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors {modal.confirmClass}"
+        >
+          {modal.confirmText}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <div class="p-6 h-full overflow-y-auto">
   <div class="flex justify-between items-center mb-6">
