@@ -138,6 +138,19 @@
     formatted = formatted.replace(/&gt;&gt;&gt;/g, '');
     formatted = formatted.replace(/&lt;&lt;&lt;/g, '');
 
+    // Format standalone transaction lines (debit/credit with type)
+    // Pattern: "- 2025-09-05: R1,381.00 debit (payment)" or "2025-09-05: R381.00 credit (transfer)"
+    formatted = formatted.replace(
+      /^([-•]?\s*)(\d{4}-\d{2}-\d{2}): (R[\d,\.]+) (debit|credit)(?: \((.+?)\))?$/gm,
+      (match, bullet, date, amount, type, category) => {
+        const isCredit = type === 'credit';
+        const cls = isCredit ? 'text-green-500 dark:text-green-400' : 'text-red-500 dark:text-red-400';
+        const prefix = isCredit ? '+' : '-';
+        const catText = category ? ` <span class="text-gray-400 text-xs">${category}</span>` : '';
+        return `<div class="flex justify-between items-center py-1 border-b border-gray-100 dark:border-gray-700"><span class="text-gray-500 text-sm">${date}${catText}</span><span class="${cls} font-medium">${prefix}${amount}</span></div>`;
+      }
+    );
+
     // Format transaction lists into tables
     // Match lists that follow a header line ending with ":"
     // Captures lines starting with: bullet points, capital letters with |, or dates
@@ -157,6 +170,15 @@
         // Skip lines that don't look like transactions
         if (line.includes('no previous transactions') || line.includes('no transactions')) {
           return '';
+        }
+        // Pattern: "- 2025-09-05: R1,381.00 debit (payment)" or "2025-09-05: R381.00 credit (transfer)"
+        const typedMatch = line.match(/^[-•]?\s*(\d{4}-\d{2}-\d{2}): (R[\d,\.]+) (debit|credit)(?: \((.+?)\))?$/);
+        if (typedMatch) {
+          const isCredit = typedMatch[3] === 'credit';
+          const cls = isCredit ? 'text-green-500 dark:text-green-400' : 'text-red-500 dark:text-red-400';
+          const prefix = isCredit ? '+' : '-';
+          const category = typedMatch[4] || '';
+          return `<tr class="border-b border-gray-100 dark:border-gray-700"><td class="py-2 pr-3 text-gray-500 text-xs">${typedMatch[1]}</td><td class="py-2 pr-3">${category}</td><td class="py-2 text-right ${cls} font-medium">${prefix}${typedMatch[2]}</td></tr>`;
         }
         // Pattern: "- 2025-11-03: Description - R1,000.00"
         const dateDescAmtMatch = line.match(/^[-•] (\d{4}-\d{2}-\d{2}): (.+?) - (R[\d,\.]+)$/);
