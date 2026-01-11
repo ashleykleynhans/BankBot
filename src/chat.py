@@ -312,14 +312,14 @@ class ChatInterface:
                         total_budgeted += budget_amt
                         total_spent += actual
                         context_parts.append(
-                            f"- {cat}: R{actual:.2f} spent of R{budget_amt:.2f} budget "
-                            f"(R{remaining:.2f} remaining, {status})"
+                            f"- {cat}: R{actual:,.2f} spent of R{budget_amt:,.2f} budget "
+                            f"(R{remaining:,.2f} remaining, {status})"
                         )
 
                     total_remaining = total_budgeted - total_spent
                     context_parts.append(
-                        f"\n>>> OVERALL BUDGET TOTAL: R{total_budgeted:.2f} budgeted, "
-                        f"R{total_spent:.2f} spent, R{total_remaining:.2f} remaining <<<"
+                        f"\n>>> OVERALL BUDGET TOTAL: R{total_budgeted:,.2f} budgeted, "
+                        f"R{total_spent:,.2f} spent, R{total_remaining:,.2f} remaining <<<"
                     )
 
         # Only include transactions section if there are transactions
@@ -379,16 +379,15 @@ When answering questions about spending or transactions:
 - Never just give a total without listing the individual transactions
 
 For budget questions:
-- CRITICAL: Use ONLY the EXACT numbers from the "OVERALL BUDGET TOTAL" line in the current context
+- CRITICAL: Copy the EXACT numbers from the budget context CHARACTER-FOR-CHARACTER including commas
 - IGNORE any budget numbers mentioned in previous conversation messages - ONLY use the current context
-- Copy the exact Rand amounts character-for-character from the context - do not modify, round, or reformat them
-- If asked about remaining budget, find "R[X] remaining" in the OVERALL BUDGET TOTAL line and use that EXACT number
-- If asked about a specific category, ALWAYS include: budget amount, amount spent, amount remaining, percentage used
-- Format: "Your [category] budget is R[budget_amount]. You've spent R[spent] ([X]% used), with R[remaining] remaining."
+- The context shows each category like: "medical: R8,615.00 spent of R8,000.00 budget (R-615.00 remaining, 108% used)"
+- Copy these numbers EXACTLY as shown - do not add, remove, or change any digits
+- Example: If context says "R932.10 remaining", your response must say "R932.10" - NOT "R9,322.10" or any other number
 - If the category is NOT listed in the budget status, say "No budget has been set for [category]"
-- If asked about overall/total budget, list ALL categories with their status, then show the OVERALL BUDGET TOTAL
+- If asked about overall/total budget, use the OVERALL BUDGET TOTAL line and copy its numbers exactly
 - Each category has its own separate budget - don't mix them
-- If over budget, say: "You are OVER BUDGET by R[amount]"
+- If remaining is negative, say: "You are OVER BUDGET by R[amount]"
 
 "Saved" or "savings" refers to transactions in the "savings" category (transfers to savings/investments), not credits received.
 

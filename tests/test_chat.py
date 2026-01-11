@@ -835,7 +835,7 @@ class TestBudgetQueries:
 
             assert "Budget status" in context
             assert "utilities" in context
-            assert "R2000.00 spent of R3000.00 budget" in context
+            assert "R2,000.00 spent of R3,000.00 budget" in context
             assert "Latest statement: #287" in context
 
     def test_budget_context_shows_over_budget(self, mock_db):
