@@ -155,14 +155,32 @@ class ChatInterface:
             date_start = today.replace(day=1)
             date_end = today
 
+        # Special handling for "doctor" queries - search descriptions, not category
+        # This avoids returning medical aid/insurance when user asks about doctor visits
+        if "doctor" in query_lower or "doctors" in query_lower:
+            # Search for actual doctor visits, not medical aid
+            doctor_terms = ["dr ", "doctor", "cardiologist", "neurologist", "dentist",
+                           "optom", "medicross", "mediclinic", "netcare", "hospital"]
+            exclude_terms = ["med aid", "medihelp", "health ins", "tms health"]
+
+            all_medical = self.db.get_transactions_by_category("medical")
+            doctor_transactions = []
+            for tx in all_medical:
+                desc_lower = tx.get("description", "").lower()
+                # Include if it matches doctor terms
+                if any(term in desc_lower for term in doctor_terms):
+                    # But exclude if it's medical aid/insurance
+                    if not any(excl in desc_lower for excl in exclude_terms):
+                        doctor_transactions.append(tx)
+            return doctor_transactions
+
         # Check for category keywords (with common synonyms)
         category_synonyms = {
             "saved": "savings",
             "save": "savings",
-            "doctor": "medical",
-            "doctors": "medical",
             "petrol": "fuel",
             "gas": "fuel",
+            "medical aid": "medical",  # Only map "medical aid" to category, not "doctor"
         }
         # Expand query with synonyms
         expanded_query = query_lower
