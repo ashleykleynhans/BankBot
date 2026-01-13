@@ -309,8 +309,33 @@ class ChatInterface:
         return []
 
     def _extract_search_terms(self, query: str) -> list[str]:
-        """Extract potential search terms from query."""
-        # Remove common words
+        """Extract and correct search terms from query using LLM."""
+        try:
+            response = self._client.chat(
+                model=self.model,
+                messages=[{
+                    "role": "user",
+                    "content": f"""Extract the key search terms from this bank transaction query. Fix any spelling mistakes.
+Return ONLY the corrected search terms, one per line, no explanations.
+
+Query: {query}
+
+Examples:
+- "how much did I spend on sportify" → spotify
+- "show me my netfilx payments" → netflix
+- "groceries last month" → groceries
+- "when did the spotify price increase" → spotify"""
+                }],
+                options={"temperature": 0}
+            )
+            terms_text = response.get("message", {}).get("content", "").strip()
+            terms = [t.strip().lower() for t in terms_text.split("\n") if t.strip()]
+            if terms:
+                return terms
+        except Exception:
+            pass  # Fall back to simple extraction
+
+        # Fallback: simple extraction without LLM
         stop_words = {
             "when", "did", "i", "the", "a", "an", "to", "for", "of", "in",
             "my", "me", "last", "first", "how", "much", "many", "what",
@@ -318,10 +343,8 @@ class ChatInterface:
             "paid", "spend", "spent", "make", "made", "payment", "payments",
             "send", "sent", "transfer", "transferred", "buy", "bought",
         }
-
         words = re.findall(r"\b[a-zA-Z]+(?:-[a-zA-Z]+)*\b", query.lower())
         terms = [w for w in words if w not in stop_words and len(w) > 2]
-
         return terms
 
     def _detect_price_change(self, transactions: list[dict]) -> str | None:
@@ -503,10 +526,11 @@ When answering questions about spending or transactions:
 - NEVER use (x2), (x3), "twice", etc - NEVER combine multiple amounts on one line
 
 For price change/increase questions:
-- Context will contain ">>> PRICE INCREASED in YYYY-MM from R[amount1] to R[amount2] <<<"
-- Copy the EXACT month and amounts from the context into a natural response
+- Context will contain ">>> PRICE INCREASED in [Month Year] from R[amount] to R[amount] <<<"
+- Example: ">>> PRICE INCREASED in September 2025 from R99.99 to R119.99 <<<"
+- Response: "Your Spotify price increased in September 2025 from R99.99 to R119.99."
+- COPY the month name exactly (e.g. "September 2025") - do NOT convert to a date like "2025-09-29"
 - If context says "NO PRICE CHANGE DETECTED", respond that the price stayed the same
-- NEVER make up amounts - only use the exact values from the context
 
 For budget questions:
 - If asked about a SPECIFIC category (e.g. "medical budget", "groceries budget"):

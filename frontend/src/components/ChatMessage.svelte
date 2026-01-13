@@ -5,7 +5,9 @@
 
   let showTransactions = false;
 
-  $: hasTransactions = message.transactions?.length > 0;
+  // Filter out fee transactions from display and limit to 10
+  $: filteredTransactions = (message.transactions?.filter(tx => tx.category !== 'fees') || []).slice(0, 10);
+  $: hasTransactions = filteredTransactions.length > 0;
 
   // Extract budget info for progress bar
   function extractBudgetInfo(content) {
@@ -305,13 +307,13 @@
         >
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
         </svg>
-        {showTransactions ? 'Hide' : 'Show'} {message.transactions.length} transaction{message.transactions.length !== 1 ? 's' : ''}
+        {showTransactions ? 'Hide' : 'Show'} {filteredTransactions.length} transaction{filteredTransactions.length !== 1 ? 's' : ''}
       </button>
 
       {#if showTransactions}
         <div class="mt-2 border-t border-gray-200 dark:border-gray-700 pt-2">
           <div class="space-y-2 text-sm">
-            {#each message.transactions as tx}
+            {#each filteredTransactions as tx}
               <div class="flex justify-between items-center py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
                 <div>
                   <div class="font-medium">{tx.description}</div>

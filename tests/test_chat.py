@@ -95,6 +95,42 @@ class TestSearchTermExtraction:
         assert "groceries" in terms
         assert "shopping" in terms
 
+    def test_extract_corrects_typos_via_llm(self, chat):
+        """Test LLM corrects typos like sportify -> spotify."""
+        chat._client.chat.return_value = {
+            "message": {"content": "spotify"}
+        }
+        terms = chat._extract_search_terms("when did the sportify price increase")
+        assert "spotify" in terms
+        assert "sportify" not in terms
+
+    def test_extract_handles_multiple_corrected_terms(self, chat):
+        """Test LLM can return multiple corrected terms."""
+        chat._client.chat.return_value = {
+            "message": {"content": "netflix\nsubscriptions"}
+        }
+        terms = chat._extract_search_terms("show me netfilx subscription payments")
+        assert "netflix" in terms
+        assert "subscriptions" in terms
+
+    def test_extract_falls_back_on_llm_error(self, chat):
+        """Test fallback to simple extraction when LLM fails."""
+        chat._client.chat.side_effect = Exception("LLM error")
+        terms = chat._extract_search_terms("woolworths groceries")
+        # Should fall back to simple extraction
+        assert "woolworths" in terms
+        assert "groceries" in terms
+
+    def test_extract_falls_back_on_empty_llm_response(self, chat):
+        """Test fallback when LLM returns empty response."""
+        chat._client.chat.return_value = {
+            "message": {"content": ""}
+        }
+        terms = chat._extract_search_terms("woolworths groceries")
+        # Should fall back to simple extraction
+        assert "woolworths" in terms
+        assert "groceries" in terms
+
 
 class TestFindRelevantTransactions:
     """Tests for finding relevant transactions."""
