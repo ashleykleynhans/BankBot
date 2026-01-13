@@ -98,20 +98,18 @@ class TestSearchTermExtraction:
     def test_extract_corrects_typos_via_llm(self, chat):
         """Test LLM corrects typos like sportify -> spotify."""
         chat._client.chat.return_value = {
-            "message": {"content": "spotify"}
+            "message": {"content": "Spotify"}
         }
         terms = chat._extract_search_terms("when did the sportify price increase")
-        assert "spotify" in terms
-        assert "sportify" not in terms
+        assert terms == ["spotify"]
 
-    def test_extract_handles_multiple_corrected_terms(self, chat):
-        """Test LLM can return multiple corrected terms."""
+    def test_extract_handles_llm_verbose_response(self, chat):
+        """Test parsing handles verbose LLM responses like 'Metaflix -> Netflix'."""
         chat._client.chat.return_value = {
-            "message": {"content": "netflix\nsubscriptions"}
+            "message": {"content": "Metaflix -> Netflix"}
         }
-        terms = chat._extract_search_terms("show me netfilx subscription payments")
-        assert "netflix" in terms
-        assert "subscriptions" in terms
+        terms = chat._extract_search_terms("show me metflicks payments")
+        assert terms == ["netflix"]
 
     def test_extract_falls_back_on_llm_error(self, chat):
         """Test fallback to simple extraction when LLM fails."""

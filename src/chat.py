@@ -315,23 +315,22 @@ class ChatInterface:
                 model=self.model,
                 messages=[{
                     "role": "user",
-                    "content": f"""Extract the key search terms from this bank transaction query. Fix any spelling mistakes.
-Return ONLY the corrected search terms, one per line, no explanations.
+                    "content": f"""In this query, what merchant/company/store is the user asking about? If misspelled, correct it.
+Answer with ONLY the name, nothing else.
 
-Query: {query}
-
-Examples:
-- "how much did I spend on sportify" → spotify
-- "show me my netfilx payments" → netflix
-- "groceries last month" → groceries
-- "when did the spotify price increase" → spotify"""
+Query: {query}"""
                 }],
                 options={"temperature": 0}
             )
             terms_text = response.get("message", {}).get("content", "").strip()
-            terms = [t.strip().lower() for t in terms_text.split("\n") if t.strip()]
-            if terms:
-                return terms
+            # Extract just the company name - handle various LLM output formats
+            # e.g., "Netflix", "Metaflix -> Netflix", "Woolworths (also known as Woolies)"
+            # Look for the last capitalized word (usually the corrected name)
+            words = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', terms_text)
+            if words:
+                clean_term = words[-1].lower()  # Take the last proper noun
+                if len(clean_term) > 1:
+                    return [clean_term]
         except Exception:
             pass  # Fall back to simple extraction
 
@@ -617,6 +616,8 @@ Answer concisely and directly."""
         if self._is_follow_up_query(query) and self._last_transactions:
             relevant_transactions = self._last_transactions
         else:
+            # Clear previous transactions before searching
+            self._last_transactions = []
             relevant_transactions = self._find_relevant_transactions(query)
             self._last_transactions = relevant_transactions
 
