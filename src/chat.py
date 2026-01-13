@@ -610,8 +610,85 @@ Answer concisely and directly."""
         self.console.print(table)
         self.console.print()
 
+    def _handle_budget_update(self, query: str) -> str | None:
+        """Check if query is a budget update or delete request and handle it."""
+        query_lower = query.lower()
+
+        # Check for budget delete patterns first
+        delete_patterns = [
+            r"(?:delete|remove|clear)\s+(?:my\s+)?(\w+)\s+budget",
+            r"(?:delete|remove|clear)\s+(?:the\s+)?budget\s+(?:for|of)\s+(\w+)",
+        ]
+
+        for pattern in delete_patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                category = match.group(1).strip()
+
+                # Verify category exists
+                valid_categories = self.db.get_all_categories()
+                if category not in [c.lower() for c in valid_categories if c]:
+                    return f"'{category}' is not a valid category."
+
+                # Delete the budget
+                if self.db.delete_budget(category):
+                    return f"Budget for {category} has been deleted."
+                else:
+                    return f"No budget found for {category}."
+
+        # Check for budget update patterns
+        budget_patterns = [
+            r"(?:add|set|update|change)\s+(?:my\s+)?(\w+)\s+budget\s+to\s+r?([\d,]+(?:\.\d{2})?)",
+            r"(?:add|set|update|change)\s+r?([\d,]+(?:\.\d{2})?)\s+(?:for|to)\s+(?:my\s+)?(\w+)\s+budget",
+            r"(?:add|set)\s+r?([\d,]+(?:\.\d{2})?)\s+(?:for|to)\s+(\w+)",
+        ]
+
+        for pattern in budget_patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                groups = match.groups()
+                # Determine which group is category and which is amount
+                if groups[0].replace(",", "").replace(".", "").isdigit():
+                    amount_str, category = groups[0], groups[1]
+                else:
+                    category, amount_str = groups[0], groups[1]
+
+                # Clean and validate
+                amount = float(amount_str.replace(",", ""))
+                category = category.strip()
+
+                # Verify category exists
+                valid_categories = self.db.get_all_categories()
+                if category not in [c.lower() for c in valid_categories if c]:
+                    return f"'{category}' is not a valid category. Valid categories include: {', '.join(sorted(c for c in valid_categories if c)[:10])}..."
+
+                # Update the budget
+                self.db.upsert_budget(category, amount)
+
+                # Get current spending for this category to show progress
+                latest_stmt = self.db.get_latest_statement()
+                spent = 0.0
+                if latest_stmt and latest_stmt.get("statement_number"):
+                    category_summary = self.db.get_category_summary_for_statement(
+                        latest_stmt["statement_number"]
+                    )
+                    for summary in category_summary:
+                        if summary.get("category", "").lower() == category:
+                            spent = abs(summary.get("total_debits", 0) or 0)
+                            break
+
+                percent = int((spent / amount * 100)) if amount > 0 else 0
+                return f"Budget updated! Your {category} budget is R{amount:,.2f}. You've spent R{spent:,.2f} ({percent}% used)."
+
+        return None
+
     def ask(self, query: str) -> str:
         """Single query method for non-interactive use."""
+        # Check if this is a budget update request
+        budget_response = self._handle_budget_update(query)
+        if budget_response:
+            return budget_response
+
         # Check if this is a follow-up query about previous transactions
         if self._is_follow_up_query(query) and self._last_transactions:
             relevant_transactions = self._last_transactions

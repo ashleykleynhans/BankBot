@@ -1150,3 +1150,115 @@ class TestDateRangeOnly:
 
             mock_db.get_transactions_in_date_range.assert_called()
             assert len(result) == 2
+
+
+class TestBudgetUpdate:
+    """Tests for budget update via chat."""
+
+    def test_add_budget_with_category_first(self, chat, mock_db):
+        """Test 'add groceries budget to R500'."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel", "medical"]
+        mock_db.get_latest_statement.return_value = {"statement_number": "001"}
+        mock_db.get_category_summary_for_statement.return_value = [
+            {"category": "groceries", "total_debits": 250.0}
+        ]
+        result = chat._handle_budget_update("add groceries budget to R500")
+        assert "budget is R500.00" in result
+        assert "spent R250.00" in result
+        assert "50% used" in result
+        mock_db.upsert_budget.assert_called_with("groceries", 500.0)
+
+    def test_add_budget_with_amount_first(self, chat, mock_db):
+        """Test 'add R500 for groceries to my budget'."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel", "medical"]
+        mock_db.get_latest_statement.return_value = {"statement_number": "001"}
+        mock_db.get_category_summary_for_statement.return_value = []
+        result = chat._handle_budget_update("add R500 for groceries")
+        assert "budget is R500.00" in result
+        assert "spent R0.00" in result
+        mock_db.upsert_budget.assert_called_with("groceries", 500.0)
+
+    def test_set_budget(self, chat, mock_db):
+        """Test 'set my fuel budget to R1000'."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel", "medical"]
+        mock_db.get_latest_statement.return_value = {"statement_number": "001"}
+        mock_db.get_category_summary_for_statement.return_value = [
+            {"category": "fuel", "total_debits": 800.0}
+        ]
+        result = chat._handle_budget_update("set my fuel budget to R1000")
+        assert "budget is R1,000.00" in result
+        assert "80% used" in result
+        mock_db.upsert_budget.assert_called_with("fuel", 1000.0)
+
+    def test_update_budget_with_comma(self, chat, mock_db):
+        """Test budget with comma in amount like R1,500."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel", "medical"]
+        mock_db.get_latest_statement.return_value = None
+        result = chat._handle_budget_update("set groceries budget to R1,500")
+        assert "budget is R1,500.00" in result
+        mock_db.upsert_budget.assert_called_with("groceries", 1500.0)
+
+    def test_invalid_category_rejected(self, chat, mock_db):
+        """Test invalid category returns error."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel", "medical"]
+        result = chat._handle_budget_update("add R500 for invalid_cat")
+        assert "not a valid category" in result
+        mock_db.upsert_budget.assert_not_called()
+
+    def test_non_budget_query_returns_none(self, chat, mock_db):
+        """Test non-budget query returns None."""
+        result = chat._handle_budget_update("how much did I spend on groceries")
+        assert result is None
+
+    def test_ask_returns_budget_response_directly(self, chat, mock_db):
+        """Test ask() returns budget update response without calling LLM."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel", "medical"]
+        mock_db.get_latest_statement.return_value = {"statement_number": "001"}
+        mock_db.get_category_summary_for_statement.return_value = [
+            {"category": "groceries", "total_debits": 300.0}
+        ]
+        result = chat.ask("set groceries budget to R500")
+        assert "budget is R500.00" in result
+        assert "spent R300.00" in result
+        assert "60% used" in result
+        mock_db.upsert_budget.assert_called_with("groceries", 500.0)
+        # LLM should not be called for budget updates
+        chat._client.chat.assert_not_called()
+
+    def test_delete_budget_for_category(self, chat, mock_db):
+        """Test 'delete budget for groceries'."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel", "medical"]
+        mock_db.delete_budget.return_value = True
+        result = chat._handle_budget_update("delete budget for groceries")
+        assert "deleted" in result.lower()
+        mock_db.delete_budget.assert_called_with("groceries")
+
+    def test_delete_my_budget(self, chat, mock_db):
+        """Test 'delete my groceries budget'."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel", "medical"]
+        mock_db.delete_budget.return_value = True
+        result = chat._handle_budget_update("delete my groceries budget")
+        assert "deleted" in result.lower()
+        mock_db.delete_budget.assert_called_with("groceries")
+
+    def test_remove_budget(self, chat, mock_db):
+        """Test 'remove fuel budget'."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel", "medical"]
+        mock_db.delete_budget.return_value = True
+        result = chat._handle_budget_update("remove fuel budget")
+        assert "deleted" in result.lower()
+        mock_db.delete_budget.assert_called_with("fuel")
+
+    def test_delete_nonexistent_budget(self, chat, mock_db):
+        """Test deleting a budget that doesn't exist."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel", "medical"]
+        mock_db.delete_budget.return_value = False
+        result = chat._handle_budget_update("delete budget for groceries")
+        assert "no budget found" in result.lower()
+
+    def test_delete_invalid_category(self, chat, mock_db):
+        """Test deleting budget for invalid category."""
+        mock_db.get_all_categories.return_value = ["groceries", "fuel", "medical"]
+        result = chat._handle_budget_update("delete budget for invalid_cat")
+        assert "not a valid category" in result.lower()
+        mock_db.delete_budget.assert_not_called()
