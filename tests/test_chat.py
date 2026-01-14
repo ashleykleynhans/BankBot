@@ -963,6 +963,88 @@ class TestFollowUpContext:
             mock_db.get_all_transactions.assert_called()
 
 
+class TestScopeExpansion:
+    """Tests for scope expansion requests (e.g., 'check all history')."""
+
+    def test_scope_expansion_in_process_query(self, mock_db):
+        """Test 'check all history' re-searches with previous query."""
+        groceries = [{"date": "2025-01-15", "description": "PNP", "amount": 500,
+                      "category": "groceries", "transaction_type": "debit"}]
+
+        with patch('src.chat.ollama.Client'):
+            chat = ChatInterface(mock_db)
+            chat._client.chat.return_value = {"message": {"content": "Response"}}
+
+            # Set up previous search state directly
+            chat._last_search_query = "show groceries"
+            chat._last_transactions = []
+
+            # Mock for the scope expansion search
+            mock_db.get_transactions_by_category.return_value = groceries
+
+            # Scope expansion request
+            chat._process_query("check all history")
+
+            # Should have re-searched with previous query (groceries)
+            mock_db.get_transactions_by_category.assert_called_with("groceries")
+            assert chat._last_transactions == groceries
+
+    def test_scope_expansion_in_ask(self, mock_db):
+        """Test 'check all history' in ask() re-searches with previous query."""
+        groceries = [{"date": "2025-01-15", "description": "PNP", "amount": 500,
+                      "category": "groceries", "transaction_type": "debit"}]
+
+        with patch('src.chat.ollama.Client'):
+            chat = ChatInterface(mock_db)
+            chat._client.chat.return_value = {"message": {"content": "Response"}}
+
+            # Set up previous search state directly
+            chat._last_search_query = "show groceries"
+            chat._last_transactions = []
+
+            # Mock for the scope expansion search
+            mock_db.get_transactions_by_category.return_value = groceries
+
+            # Scope expansion request
+            chat.ask("check all history not just this month")
+
+            # Should have re-searched with previous query (groceries)
+            mock_db.get_transactions_by_category.assert_called_with("groceries")
+            assert chat._last_transactions == groceries
+
+    def test_scope_expansion_patterns(self, mock_db):
+        """Test various scope expansion patterns are detected."""
+        with patch('src.chat.ollama.Client'):
+            chat = ChatInterface(mock_db)
+
+            # All of these should be detected as scope expansion
+            assert chat._is_scope_expansion_request("check all history")
+            assert chat._is_scope_expansion_request("not just this month")
+            assert chat._is_scope_expansion_request("search all history")
+            assert chat._is_scope_expansion_request("include everything")
+            assert chat._is_scope_expansion_request("across all time")
+            assert chat._is_scope_expansion_request("entire history please")
+
+            # These should NOT be scope expansion
+            assert not chat._is_scope_expansion_request("show groceries")
+            assert not chat._is_scope_expansion_request("how much did I spend")
+
+    def test_scope_expansion_without_previous_query(self, mock_db):
+        """Test scope expansion with no previous query falls through to normal search."""
+        with patch('src.chat.ollama.Client'):
+            chat = ChatInterface(mock_db)
+            chat._client.chat.return_value = {"message": {"content": "Response"}}
+            chat._last_search_query = ""  # No previous query
+
+            mock_db.get_all_transactions.return_value = []
+            mock_db.search_transactions.return_value = []
+            chat.ask("check all history")
+
+            # Should fall through to else branch (normal search), not scope expansion
+            # The _last_search_query should now be set to the current query
+            assert chat._last_search_query == "check all history"
+
+
 class TestBudgetQueries:
     """Tests for budget-related query handling."""
 

@@ -27,6 +27,7 @@ class ChatInterface:
         self.console = Console()
         self._conversation_history = []
         self._last_transactions = []  # Store last query's transactions for follow-ups
+        self._last_search_query = ""  # Store last search query for scope expansion
 
     def start(self) -> None:
         """Start the interactive chat loop."""
@@ -65,16 +66,39 @@ class ChatInterface:
             except EOFError:
                 break
 
+    def _is_scope_expansion_request(self, query: str) -> bool:
+        """Detect if user wants to expand search scope (e.g., 'check all history')."""
+        query_lower = query.lower()
+        expansion_patterns = [
+            r"all\s+history",
+            r"not\s+just\s+this\s+month",
+            r"check\s+(?:all|everything)",
+            r"search\s+(?:all|everything)",
+            r"include\s+(?:all|everything)",
+            r"across\s+all",
+            r"all\s+time",
+            r"entire\s+history",
+        ]
+        return any(re.search(p, query_lower) for p in expansion_patterns)
+
     def _process_query(self, query: str) -> None:
         """Process a user query and display the response."""
+        # Check if user wants to expand search scope from previous query
+        if self._is_scope_expansion_request(query) and self._last_search_query:
+            # Re-search with previous query but force all history
+            relevant_transactions = self._find_relevant_transactions(
+                self._last_search_query, force_all_history=True
+            )
+            self._last_transactions = relevant_transactions
         # Check if this is a follow-up query about previous transactions
-        if self._is_follow_up_query(query) and self._last_transactions:
+        elif self._is_follow_up_query(query) and self._last_transactions:
             relevant_transactions = self._last_transactions
         else:
             # Find new relevant transactions
             relevant_transactions = self._find_relevant_transactions(query)
             # Store for potential follow-up queries
             self._last_transactions = relevant_transactions
+            self._last_search_query = query
 
         # Build context for the LLM
         context = self._build_context(relevant_transactions, query)
@@ -135,7 +159,9 @@ class ChatInterface:
 
         return False
 
-    def _find_relevant_transactions(self, query: str) -> list[dict]:
+    def _find_relevant_transactions(
+        self, query: str, force_all_history: bool = False
+    ) -> list[dict]:
         """Find transactions relevant to the user's query."""
         query_lower = query.lower()
 
@@ -156,18 +182,19 @@ class ChatInterface:
         if is_greeting and len(query.split()) <= 5:
             return []
 
-        # First, determine date range if specified
+        # First, determine date range if specified (skip if forcing all history)
         date_start = None
         date_end = None
 
-        if "last month" in query_lower:
-            today = datetime.now()
-            date_start = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
-            date_end = today.replace(day=1) - timedelta(days=1)
-        elif "this month" in query_lower:
-            today = datetime.now()
-            date_start = today.replace(day=1)
-            date_end = today
+        if not force_all_history:
+            if "last month" in query_lower:
+                today = datetime.now()
+                date_start = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+                date_end = today.replace(day=1) - timedelta(days=1)
+            elif "this month" in query_lower:
+                today = datetime.now()
+                date_start = today.replace(day=1)
+                date_end = today
 
         # Special handling for "doctor" queries - search descriptions, not category
         # This avoids returning medical aid/insurance when user asks about doctor visits
@@ -689,14 +716,22 @@ Answer concisely and directly."""
         if budget_response:
             return budget_response
 
+        # Check if user wants to expand search scope from previous query
+        if self._is_scope_expansion_request(query) and self._last_search_query:
+            # Re-search with previous query but force all history
+            relevant_transactions = self._find_relevant_transactions(
+                self._last_search_query, force_all_history=True
+            )
+            self._last_transactions = relevant_transactions
         # Check if this is a follow-up query about previous transactions
-        if self._is_follow_up_query(query) and self._last_transactions:
+        elif self._is_follow_up_query(query) and self._last_transactions:
             relevant_transactions = self._last_transactions
         else:
             # Clear previous transactions before searching
             self._last_transactions = []
             relevant_transactions = self._find_relevant_transactions(query)
             self._last_transactions = relevant_transactions
+            self._last_search_query = query
 
         context = self._build_context(relevant_transactions, query)
         return self._get_llm_response(query, context)
@@ -705,3 +740,4 @@ Answer concisely and directly."""
         """Clear conversation history and cached transactions."""
         self._conversation_history = []
         self._last_transactions = []
+        self._last_search_query = ""
