@@ -60,10 +60,21 @@ pip install -e ".[test]"
 
 ## Setup
 
-1. **Start LM Studio** and load a model:
-   - Download and install [LM Studio](https://lmstudio.ai/)
-   - Download a model (e.g., `openai/gpt-oss-20b`)
-   - Start the local server (default port: 1234)
+1. **Install and start LM Studio**:
+   ```bash
+   # Install LM Studio (macOS)
+   brew install --cask lm-studio
+   open -a "LM Studio"
+
+   # Set up CLI tools (first time only)
+   ~/.lmstudio/bin/lms bootstrap
+   source ~/.zshrc
+
+   # Download and start a model
+   lms get openai/gpt-oss-20b
+   lms load openai/gpt-oss-20b
+   lms server start
+   ```
 
 2. **Configure** (optional - edit `config.yaml`):
    ```yaml
