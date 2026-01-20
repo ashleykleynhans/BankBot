@@ -30,23 +30,23 @@ def cmd_import(args: argparse.Namespace, config: dict) -> None:
 
     db = Database(config["paths"]["database"])
     classifier = TransactionClassifier(
-        host=config["ollama"]["host"],
-        port=config["ollama"]["port"],
-        model=config["ollama"]["model"],
+        host=config["llm"]["host"],
+        port=config["llm"]["port"],
+        model=config["llm"]["model"],
         categories=config.get("categories"),
         classification_rules=config.get("classification_rules")
     )
 
-    # Check Ollama connection
+    # Check LLM connection
     if not classifier.check_connection():
         console.print(
-            f"[red]Cannot connect to Ollama or model '{config['ollama']['model']}' "
+            f"[red]Cannot connect to LLM server or model '{config['llm']['model']}' "
             f"not found.[/red]"
         )
         console.print(
             f"[yellow]Available models: {classifier.get_available_models() or 'none'}[/yellow]"
         )
-        console.print("[dim]Start Ollama with: ollama serve[/dim]")
+        console.print("[dim]Start LM Studio or your LLM server[/dim]")
         sys.exit(1)
 
     console.print(f"[dim]Importing from: {statements_dir}[/dim]")
@@ -67,16 +67,16 @@ def cmd_watch(args: argparse.Namespace, config: dict) -> None:
     """Watch for new statements and import them automatically."""
     db = Database(config["paths"]["database"])
     classifier = TransactionClassifier(
-        host=config["ollama"]["host"],
-        port=config["ollama"]["port"],
-        model=config["ollama"]["model"],
+        host=config["llm"]["host"],
+        port=config["llm"]["port"],
+        model=config["llm"]["model"],
         categories=config.get("categories"),
         classification_rules=config.get("classification_rules")
     )
 
     if not classifier.check_connection():
         console.print(
-            f"[red]Cannot connect to Ollama or model '{config['ollama']['model']}' "
+            f"[red]Cannot connect to LLM server or model '{config['llm']['model']}' "
             f"not found.[/red]"
         )
         sys.exit(1)
@@ -106,9 +106,9 @@ def cmd_chat(args: argparse.Namespace, config: dict) -> None:
 
     chat = ChatInterface(
         db=db,
-        host=config["ollama"]["host"],
-        port=config["ollama"]["port"],
-        model=config["ollama"]["model"]
+        host=config["llm"]["host"],
+        port=config["llm"]["port"],
+        model=config["llm"]["model"]
     )
     chat.start()
 
@@ -334,17 +334,17 @@ def cmd_reimport(args: argparse.Namespace, config: dict) -> None:
 
     db = Database(config["paths"]["database"])
     classifier = TransactionClassifier(
-        host=config["ollama"]["host"],
-        port=config["ollama"]["port"],
-        model=config["ollama"]["model"],
+        host=config["llm"]["host"],
+        port=config["llm"]["port"],
+        model=config["llm"]["model"],
         categories=config.get("categories"),
         classification_rules=config.get("classification_rules")
     )
 
-    # Check Ollama connection
+    # Check LLM connection
     if not classifier.check_connection():
         console.print(
-            f"[red]Cannot connect to Ollama or model '{config['ollama']['model']}' "
+            f"[red]Cannot connect to LLM server or model '{config['llm']['model']}' "
             f"not found.[/red]"
         )
         sys.exit(1)

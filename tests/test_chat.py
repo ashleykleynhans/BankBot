@@ -8,6 +8,13 @@ from src.chat import ChatInterface
 from src.database import Database
 
 
+def mock_openai_response(content: str) -> Mock:
+    """Create a mock OpenAI chat completion response."""
+    response = Mock()
+    response.choices = [Mock(message=Mock(content=content))]
+    return response
+
+
 @pytest.fixture
 def mock_db():
     """Create a mock database."""
@@ -36,7 +43,7 @@ def mock_db():
 @pytest.fixture
 def chat(mock_db):
     """Create a chat interface with mock database."""
-    with patch('src.chat.ollama.Client'):
+    with patch('src.chat.OpenAI'):
         return ChatInterface(mock_db)
 
 
@@ -59,7 +66,7 @@ class TestClearContext:
 
     def test_clear_context_clears_history(self, mock_db):
         """Test clear_context clears conversation history and transactions."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             # Populate history and transactions
             chat._conversation_history = [{"role": "user", "content": "test"}]
@@ -97,23 +104,19 @@ class TestSearchTermExtraction:
 
     def test_extract_corrects_typos_via_llm(self, chat):
         """Test LLM corrects typos like sportify -> spotify."""
-        chat._client.chat.return_value = {
-            "message": {"content": "Spotify"}
-        }
+        chat._client.chat.completions.create.return_value = mock_openai_response("Spotify")
         terms = chat._extract_search_terms("when did the sportify price increase")
         assert terms == ["spotify"]
 
     def test_extract_handles_llm_verbose_response(self, chat):
         """Test parsing handles verbose LLM responses like 'Metaflix -> Netflix'."""
-        chat._client.chat.return_value = {
-            "message": {"content": "Metaflix -> Netflix"}
-        }
+        chat._client.chat.completions.create.return_value = mock_openai_response("Metaflix -> Netflix")
         terms = chat._extract_search_terms("show me metflicks payments")
         assert terms == ["netflix"]
 
     def test_extract_falls_back_on_llm_error(self, chat):
         """Test fallback to simple extraction when LLM fails."""
-        chat._client.chat.side_effect = Exception("LLM error")
+        chat._client.chat.completions.create.side_effect = Exception("LLM error")
         terms = chat._extract_search_terms("woolworths groceries")
         # Should fall back to simple extraction
         assert "woolworths" in terms
@@ -121,9 +124,7 @@ class TestSearchTermExtraction:
 
     def test_extract_falls_back_on_empty_llm_response(self, chat):
         """Test fallback when LLM returns empty response."""
-        chat._client.chat.return_value = {
-            "message": {"content": ""}
-        }
+        chat._client.chat.completions.create.return_value = mock_openai_response("")
         terms = chat._extract_search_terms("woolworths groceries")
         # Should fall back to simple extraction
         assert "woolworths" in terms
@@ -476,9 +477,7 @@ class TestConversationHistory:
 
     def test_history_stores_user_message(self, chat, mock_db):
         """Test user messages are stored in history."""
-        chat._client.chat.return_value = {
-            "message": {"content": "Test response"}
-        }
+        chat._client.chat.completions.create.return_value = mock_openai_response("Test response")
 
         chat._get_llm_response("test query", "test context")
 
@@ -487,9 +486,7 @@ class TestConversationHistory:
 
     def test_history_stores_assistant_response(self, chat, mock_db):
         """Test assistant responses are stored in history."""
-        chat._client.chat.return_value = {
-            "message": {"content": "Test response"}
-        }
+        chat._client.chat.completions.create.return_value = mock_openai_response("Test response")
 
         chat._get_llm_response("test query", "test context")
 
@@ -498,9 +495,7 @@ class TestConversationHistory:
 
     def test_history_accumulates(self, chat, mock_db):
         """Test conversation history accumulates over multiple turns."""
-        chat._client.chat.return_value = {
-            "message": {"content": "Response"}
-        }
+        chat._client.chat.completions.create.return_value = mock_openai_response("Response")
 
         chat._get_llm_response("query 1", "context 1")
         chat._get_llm_response("query 2", "context 2")
@@ -509,9 +504,7 @@ class TestConversationHistory:
 
     def test_history_sent_to_llm(self, chat, mock_db):
         """Test full history is sent to LLM."""
-        chat._client.chat.return_value = {
-            "message": {"content": "Response"}
-        }
+        chat._client.chat.completions.create.return_value = mock_openai_response("Response")
 
         # First query
         chat._get_llm_response("query 1", "context 1")
@@ -520,7 +513,7 @@ class TestConversationHistory:
         chat._get_llm_response("query 2", "context 2")
 
         # Check the messages sent to chat
-        call_args = chat._client.chat.call_args
+        call_args = chat._client.chat.completions.create.call_args
         messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
 
         # Should have system + 3 history messages (user1, asst1, user2)
@@ -533,7 +526,7 @@ class TestConversationHistory:
 
     def test_history_not_added_on_error(self, chat, mock_db):
         """Test history not updated on LLM error."""
-        chat._client.chat.side_effect = Exception("Connection error")
+        chat._client.chat.completions.create.side_effect = Exception("Connection error")
 
         chat._get_llm_response("test query", "test context")
 
@@ -546,7 +539,7 @@ class TestLLMResponse:
 
     def test_handles_llm_error(self, chat, mock_db):
         """Test LLM errors are handled gracefully."""
-        chat._client.chat.side_effect = Exception("Connection refused")
+        chat._client.chat.completions.create.side_effect = Exception("Connection refused")
 
         result = chat._get_llm_response("test", "context")
 
@@ -564,11 +557,11 @@ class TestAskMethod:
              "category": "groceries", "transaction_type": "debit"}
         ]
 
-        with patch('src.chat.ollama.Client') as mock_ollama:
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
-            chat._client.chat.return_value = {
-                "message": {"content": "Your last grocery purchase was R500"}
-            }
+            chat._client.chat.completions.create.return_value = mock_openai_response(
+                "Your last grocery purchase was R500"
+            )
 
             result = chat.ask("when did I last buy groceries")
 
@@ -581,11 +574,9 @@ class TestAskMethod:
              "category": "groceries", "transaction_type": "debit"}
         ]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
-            chat._client.chat.return_value = {
-                "message": {"content": "Response"}
-            }
+            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
 
             # First query - should fetch transactions
             chat.ask("show groceries")
@@ -607,7 +598,7 @@ class TestChatStart:
 
     def test_start_quit_command(self, mock_db):
         """Test start exits on quit command."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
 
             # Simulate user typing 'quit'
@@ -616,7 +607,7 @@ class TestChatStart:
 
     def test_start_exit_command(self, mock_db):
         """Test start exits on exit command."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
 
             with patch.object(chat.console, 'input', return_value='exit'):
@@ -624,7 +615,7 @@ class TestChatStart:
 
     def test_start_q_command(self, mock_db):
         """Test start exits on q command."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
 
             with patch.object(chat.console, 'input', return_value='q'):
@@ -632,7 +623,7 @@ class TestChatStart:
 
     def test_start_empty_input(self, mock_db):
         """Test start handles empty input."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
 
             # Return empty string first, then quit
@@ -642,7 +633,7 @@ class TestChatStart:
 
     def test_start_keyboard_interrupt(self, mock_db):
         """Test start handles KeyboardInterrupt."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
 
             with patch.object(chat.console, 'input', side_effect=KeyboardInterrupt()):
@@ -650,7 +641,7 @@ class TestChatStart:
 
     def test_start_eof_error(self, mock_db):
         """Test start handles EOFError."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
 
             with patch.object(chat.console, 'input', side_effect=EOFError()):
@@ -663,11 +654,9 @@ class TestChatStart:
              "category": "groceries", "transaction_type": "debit"}
         ]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
-            chat._client.chat.return_value = {
-                "message": {"content": "Response"}
-            }
+            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
 
             # Return query first, then quit
             inputs = iter(['show groceries', 'quit'])
@@ -680,7 +669,7 @@ class TestDisplayTransactions:
 
     def test_display_transactions_debit(self, mock_db):
         """Test displaying debit transactions."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
 
             transactions = [
@@ -693,7 +682,7 @@ class TestDisplayTransactions:
 
     def test_display_transactions_credit(self, mock_db):
         """Test displaying credit transactions."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
 
             transactions = [
@@ -705,7 +694,7 @@ class TestDisplayTransactions:
 
     def test_display_transactions_limits_to_10(self, mock_db):
         """Test display limits to 10 transactions."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
 
             transactions = [
@@ -719,7 +708,7 @@ class TestDisplayTransactions:
 
     def test_display_transactions_no_category(self, mock_db):
         """Test displaying transactions without category."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
 
             transactions = [
@@ -740,11 +729,11 @@ class TestProcessQuery:
              "category": "groceries", "transaction_type": "debit"}
         ]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
-            chat._client.chat.return_value = {
-                "message": {"content": "Here are your transactions"}
-            }
+            chat._client.chat.completions.create.return_value = mock_openai_response(
+                "Here are your transactions"
+            )
 
             chat._process_query("show groceries")
 
@@ -758,11 +747,11 @@ class TestProcessQuery:
         mock_db.get_all_transactions.return_value = many_transactions
         mock_db.search_transactions.return_value = []  # No search results
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
-            chat._client.chat.return_value = {
-                "message": {"content": "Found many transactions"}
-            }
+            chat._client.chat.completions.create.return_value = mock_openai_response(
+                "Found many transactions"
+            )
 
             # Should not display table for > 10 transactions
             chat._process_query("random query with no matches")
@@ -775,7 +764,7 @@ class TestFindRelevantTransactionsExtended:
         """Test finding transactions by income keyword."""
         mock_db.get_transactions_by_type.return_value = []
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             chat._find_relevant_transactions("show my income")
 
@@ -785,7 +774,7 @@ class TestFindRelevantTransactionsExtended:
         """Test debit/expense/payment keywords don't return all debits."""
         mock_db.search_transactions.return_value = []
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             # These keywords should NOT trigger get_transactions_by_type
             # but should fall through to search, then return empty (no fallback)
@@ -801,7 +790,7 @@ class TestFindRelevantTransactionsExtended:
         """Test payment keyword falls through to search, no fallback."""
         mock_db.search_transactions.return_value = []
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             result = chat._find_relevant_transactions("show payment history")
 
@@ -817,7 +806,7 @@ class TestFindRelevantTransactionsExtended:
         ]
         mock_db.search_transactions.return_value = fee_transactions
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             result = chat._find_relevant_transactions("show my fees")
 
@@ -830,7 +819,7 @@ class TestFollowUpDetection:
 
     def test_greeting_not_follow_up(self, mock_db):
         """Test greetings are never detected as follow-ups."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             assert chat._is_follow_up_query("hi") is False
             assert chat._is_follow_up_query("hello") is False
@@ -838,43 +827,43 @@ class TestFollowUpDetection:
 
     def test_detects_them_as_follow_up(self, mock_db):
         """Test 'them' is detected as follow-up."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             assert chat._is_follow_up_query("group them by date") is True
 
     def test_detects_these_as_follow_up(self, mock_db):
         """Test 'these' is detected as follow-up."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             assert chat._is_follow_up_query("summarize these") is True
 
     def test_detects_sort_as_follow_up(self, mock_db):
         """Test 'sort' is detected as follow-up."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             assert chat._is_follow_up_query("sort by amount") is True
 
     def test_detects_total_as_follow_up(self, mock_db):
         """Test 'total' is detected as follow-up."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             assert chat._is_follow_up_query("what's the total?") is True
 
     def test_short_query_without_keywords_is_follow_up(self, mock_db):
         """Test short queries without specific keywords are follow-ups."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             assert chat._is_follow_up_query("by date") is True
 
     def test_specific_query_not_follow_up(self, mock_db):
         """Test query with specific keywords is not follow-up."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             assert chat._is_follow_up_query("show electricity transactions") is False
 
     def test_show_query_not_follow_up(self, mock_db):
         """Test 'show' query is not follow-up."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             assert chat._is_follow_up_query("show my groceries") is False
 
@@ -882,14 +871,14 @@ class TestFollowUpDetection:
         """Test short query with category name is not follow-up."""
         # "airtime" is a category but not in the hardcoded keywords
         mock_db.get_all_categories.return_value = ["airtime", "groceries", "fuel"]
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             # Short query (≤5 words) with category name should NOT be follow-up
             assert chat._is_follow_up_query("how much airtime?") is False
 
     def test_pay_name_query_not_follow_up(self, mock_db):
         """Test 'Did I pay Name?' is not a follow-up."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             # "Did I pay Paul?" should trigger a new search, not be a follow-up
             assert chat._is_follow_up_query("Did I pay Paul?") is False
@@ -907,9 +896,9 @@ class TestFollowUpContext:
         ]
         mock_db.search_transactions.return_value = electricity_transactions
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
-            chat._client.chat.return_value = {"message": {"content": "Response"}}
+            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
 
             # First query - gets electricity transactions
             chat._process_query("show electricity")
@@ -933,9 +922,9 @@ class TestFollowUpContext:
         groceries = [{"date": "2025-01-16", "description": "Groceries", "amount": 300,
                      "category": "groceries", "transaction_type": "debit"}]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
-            chat._client.chat.return_value = {"message": {"content": "Response"}}
+            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
 
             # First query
             mock_db.search_transactions.return_value = electricity
@@ -951,9 +940,9 @@ class TestFollowUpContext:
         """Test follow-up with no previous transactions tries to fetch new."""
         mock_db.search_transactions.return_value = []
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
-            chat._client.chat.return_value = {"message": {"content": "Response"}}
+            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
             chat._last_transactions = []  # Empty
 
             # Even though it looks like follow-up, should try to fetch new
@@ -971,9 +960,9 @@ class TestScopeExpansion:
         groceries = [{"date": "2025-01-15", "description": "PNP", "amount": 500,
                       "category": "groceries", "transaction_type": "debit"}]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
-            chat._client.chat.return_value = {"message": {"content": "Response"}}
+            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
 
             # Set up previous search state directly
             chat._last_search_query = "show groceries"
@@ -994,9 +983,9 @@ class TestScopeExpansion:
         groceries = [{"date": "2025-01-15", "description": "PNP", "amount": 500,
                       "category": "groceries", "transaction_type": "debit"}]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
-            chat._client.chat.return_value = {"message": {"content": "Response"}}
+            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
 
             # Set up previous search state directly
             chat._last_search_query = "show groceries"
@@ -1014,7 +1003,7 @@ class TestScopeExpansion:
 
     def test_scope_expansion_patterns(self, mock_db):
         """Test various scope expansion patterns are detected."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
 
             # All of these should be detected as scope expansion
@@ -1031,9 +1020,9 @@ class TestScopeExpansion:
 
     def test_scope_expansion_without_previous_query(self, mock_db):
         """Test scope expansion with no previous query falls through to normal search."""
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
-            chat._client.chat.return_value = {"message": {"content": "Response"}}
+            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
             chat._last_search_query = ""  # No previous query
 
             mock_db.get_all_transactions.return_value = []
@@ -1061,7 +1050,7 @@ class TestBudgetQueries:
              "category": "groceries", "transaction_type": "debit"}
         ]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             result = chat._find_relevant_transactions("How much of my electricity budget have I used?")
 
@@ -1077,7 +1066,7 @@ class TestBudgetQueries:
             "id": 1, "statement_number": "287", "statement_date": "2025-12-01"
         }
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             result = chat._find_relevant_transactions("How much budget remaining?")
 
@@ -1097,7 +1086,7 @@ class TestBudgetQueries:
         ]
         mock_db.get_all_categories.return_value = ["utilities", "groceries"]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             result = chat._find_relevant_transactions("How much of my utilities budget?")
 
@@ -1125,7 +1114,7 @@ class TestBudgetQueries:
              "category": "utilities", "transaction_type": "debit"}
         ]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             context = chat._build_context(transactions, "How much of my budget have I used?")
 
@@ -1150,7 +1139,7 @@ class TestBudgetQueries:
         transactions = [{"date": "2025-12-15", "description": "Test", "amount": 2000,
                         "category": "utilities", "transaction_type": "debit"}]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             context = chat._build_context(transactions, "budget status")
 
@@ -1163,7 +1152,7 @@ class TestBudgetQueries:
         transactions = [{"date": "2025-12-15", "description": "Test", "amount": 500,
                         "category": "groceries", "transaction_type": "debit"}]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             context = chat._build_context(transactions, "show groceries")
 
@@ -1182,7 +1171,7 @@ class TestSynonymExpansion:
             {"date": "2025-01-15", "description": "Transfer to savings", "amount": 1000}
         ]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             chat._find_relevant_transactions("how much have I saved")
 
@@ -1195,7 +1184,7 @@ class TestSynonymExpansion:
             {"date": "2025-01-15", "description": "Dr Smith", "amount": 500}
         ]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             chat._find_relevant_transactions("when did I pay the doctor")
 
@@ -1208,7 +1197,7 @@ class TestSynonymExpansion:
             {"date": "2025-01-15", "description": "Shell", "amount": 800}
         ]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             chat._find_relevant_transactions("how much petrol did I buy")
 
@@ -1226,7 +1215,7 @@ class TestDateRangeOnly:
             {"date": "2025-12-20", "description": "Transaction 2", "amount": 200},
         ]
 
-        with patch('src.chat.ollama.Client'):
+        with patch('src.chat.OpenAI'):
             chat = ChatInterface(mock_db)
             result = chat._find_relevant_transactions("show me last month")
 

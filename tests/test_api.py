@@ -57,7 +57,7 @@ def mock_db():
 def mock_config():
     """Create mock config."""
     return {
-        "ollama": {
+        "llm": {
             "host": "localhost",
             "port": 11434,
             "model": "llama3.2",
@@ -495,7 +495,7 @@ class TestLifespan:
                  patch('src.api.app.asyncio.create_task', mock_create_task):
                 mock_get_config.return_value = {
                     "paths": {"database": "test.db"},
-                    "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+                    "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
                 }
                 mock_db = Mock()
                 mock_db_class.return_value = mock_db

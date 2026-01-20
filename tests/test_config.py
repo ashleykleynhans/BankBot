@@ -15,7 +15,7 @@ class TestLoadConfig:
         """Test loading a valid config file."""
         config_data = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434},
+            "llm": {"host": "localhost", "port": 11434},
             "categories": ["groceries", "fuel"],
         }
         config_file = tmp_path / "config.yaml"
@@ -24,7 +24,7 @@ class TestLoadConfig:
         result = load_config(config_file)
 
         assert result["bank"] == "fnb"
-        assert result["ollama"]["host"] == "localhost"
+        assert result["llm"]["host"] == "localhost"
         assert "groceries" in result["categories"]
 
     def test_load_missing_config(self):

@@ -1,10 +1,10 @@
-"""Transaction classifier using Ollama LLM."""
+"""Transaction classifier using OpenAI-compatible LLM API."""
 
 import json
 import re
 from dataclasses import dataclass
 
-import ollama
+from openai import OpenAI
 
 
 @dataclass
@@ -16,7 +16,7 @@ class ClassificationResult:
 
 
 class TransactionClassifier:
-    """Classify transactions using rules first, then Ollama LLM as fallback."""
+    """Classify transactions using rules first, then LLM as fallback."""
 
     def __init__(
         self,
@@ -37,7 +37,10 @@ class TransactionClassifier:
             "deposit", "savings", "eft_payment", "other"
         ]
         self.classification_rules = classification_rules or {}
-        self._client = ollama.Client(host=f"http://{host}:{port}")
+        self._client = OpenAI(
+            base_url=f"http://{host}:{port}/v1",
+            api_key="lm-studio"
+        )
 
     def _check_rules(self, description: str) -> str | None:
         """Check if description matches any classification rules.
@@ -112,13 +115,13 @@ Rules:
 """
 
         try:
-            response = self._client.generate(
+            response = self._client.chat.completions.create(
                 model=self.model,
-                prompt=prompt,
-                options={"temperature": 0.1}
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1
             )
 
-            return self._parse_response(response["response"])
+            return self._parse_response(response.choices[0].message.content)
         except Exception as e:
             # Return default classification on error
             return ClassificationResult(
@@ -190,18 +193,18 @@ Rules:
             )
 
     def check_connection(self) -> bool:
-        """Check if Ollama is available and the model is loaded."""
+        """Check if the LLM server is available."""
         try:
-            response = self._client.list()
-            model_names = [m.model.split(":")[0] for m in response.models]
-            return self.model.split(":")[0] in model_names
+            response = self._client.models.list()
+            model_ids = [m.id for m in response.data]
+            return self.model in model_ids or len(model_ids) > 0
         except Exception:
             return False
 
     def get_available_models(self) -> list[str]:
-        """Get list of available Ollama models."""
+        """Get list of available models."""
         try:
-            response = self._client.list()
-            return [m.model for m in response.models]
+            response = self._client.models.list()
+            return [m.id for m in response.data]
         except Exception:
             return []

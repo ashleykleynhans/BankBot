@@ -6,11 +6,11 @@ bank: fnb                    # Options: fnb (more to be added)
 # PDF password (if your bank statements are password-protected)
 # pdf_password: your_password_here
 
-# Ollama settings
-ollama:
+# LLM settings (OpenAI-compatible API, e.g., LM Studio)
+llm:
   host: localhost
-  port: 11434
-  model: llama3.1:8b           # Model for classification and chat
+  port: 1234                     # LM Studio default port
+  model: openai/gpt-oss-20b      # Model for classification and chat
 
 # Paths
 paths:

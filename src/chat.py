@@ -2,7 +2,7 @@ import json
 import re
 from datetime import datetime, timedelta
 
-import ollama
+from openai import OpenAI
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -23,7 +23,10 @@ class ChatInterface:
     ):
         self.db = db
         self.model = model
-        self._client = ollama.Client(host=f"http://{host}:{port}")
+        self._client = OpenAI(
+            base_url=f"http://{host}:{port}/v1",
+            api_key="lm-studio"  # LM Studio doesn't require a real key
+        )
         self.console = Console()
         self._conversation_history = []
         self._last_transactions = []  # Store last query's transactions for follow-ups
@@ -338,7 +341,7 @@ class ChatInterface:
     def _extract_search_terms(self, query: str) -> list[str]:
         """Extract and correct search terms from query using LLM."""
         try:
-            response = self._client.chat(
+            response = self._client.chat.completions.create(
                 model=self.model,
                 messages=[{
                     "role": "user",
@@ -347,9 +350,9 @@ Answer with ONLY the name, nothing else.
 
 Query: {query}"""
                 }],
-                options={"temperature": 0}
+                temperature=0
             )
-            terms_text = response.get("message", {}).get("content", "").strip()
+            terms_text = response.choices[0].message.content.strip()
             # Extract just the company name - handle various LLM output formats
             # e.g., "Netflix", "Metaflix -> Netflix", "Woolworths (also known as Woolies)"
             # Look for the last capitalized word (usually the corrected name)
@@ -529,7 +532,7 @@ Query: {query}"""
         return "\n".join(context_parts)
 
     def _get_llm_response(self, query: str, context: str) -> str:
-        """Get response from Ollama LLM."""
+        """Get response from LLM."""
         today = datetime.now()
         current_date = today.strftime("%Y-%m-%d")
         current_month = today.strftime("%B %Y")
@@ -592,12 +595,12 @@ Answer concisely and directly."""
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(self._conversation_history)
 
-            response = self._client.chat(
+            response = self._client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                options={"temperature": 0.3}
+                temperature=0.3
             )
-            assistant_response = response["message"]["content"].strip()
+            assistant_response = response.choices[0].message.content.strip()
 
             # Add assistant response to history
             self._conversation_history.append({

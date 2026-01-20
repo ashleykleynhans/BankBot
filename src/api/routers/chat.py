@@ -37,9 +37,9 @@ async def websocket_chat(websocket: WebSocket) -> None:
     # Create session for this connection
     session = session_manager.create_session(
         db=db,
-        host=config["ollama"]["host"],
-        port=config["ollama"]["port"],
-        model=config["ollama"]["model"],
+        host=config["llm"]["host"],
+        port=config["llm"]["port"],
+        model=config["llm"]["model"],
     )
 
     try:

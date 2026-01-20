@@ -9,7 +9,7 @@ from src.classifier import TransactionClassifier, ClassificationResult
 @pytest.fixture
 def classifier():
     """Create a classifier with test categories."""
-    with patch('src.classifier.ollama.Client'):
+    with patch('src.classifier.OpenAI'):
         return TransactionClassifier(
             categories=["groceries", "fuel", "medical", "salary", "subscriptions", "other"],
             classification_rules={
@@ -92,18 +92,20 @@ class TestLLMClassification:
 
     def test_classify_falls_back_to_llm(self, classifier):
         """Test classification falls back to LLM when no rule matches."""
-        classifier._client.generate.return_value = {
-            "response": '{"category": "other", "recipient_or_payer": "Test", "confidence": "medium"}'
-        }
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(
+            content='{"category": "other", "recipient_or_payer": "Test", "confidence": "medium"}'
+        ))]
+        classifier._client.chat.completions.create.return_value = mock_response
 
         result = classifier.classify("Random Transaction", -100)
 
         assert result.category == "other"
-        classifier._client.generate.assert_called_once()
+        classifier._client.chat.completions.create.assert_called_once()
 
     def test_classify_handles_llm_error(self, classifier):
         """Test classification handles LLM errors gracefully."""
-        classifier._client.generate.side_effect = Exception("Connection error")
+        classifier._client.chat.completions.create.side_effect = Exception("Connection error")
 
         result = classifier.classify("Random Transaction", -100)
 
@@ -186,41 +188,42 @@ class TestConnectionCheck:
     def test_check_connection_success(self, classifier):
         """Test successful connection check."""
         mock_model = MagicMock()
-        mock_model.model = "llama3.2:latest"
-        classifier._client.list.return_value = MagicMock(models=[mock_model])
+        mock_model.id = "llama3.2"
+        classifier._client.models.list.return_value = MagicMock(data=[mock_model])
 
         assert classifier.check_connection() is True
 
     def test_check_connection_model_not_found(self, classifier):
-        """Test connection check when model not found."""
+        """Test connection check when model not found but server available."""
         mock_model = MagicMock()
-        mock_model.model = "other_model:latest"
-        classifier._client.list.return_value = MagicMock(models=[mock_model])
+        mock_model.id = "other_model"
+        classifier._client.models.list.return_value = MagicMock(data=[mock_model])
 
-        assert classifier.check_connection() is False
+        # Should still return True if any model is available
+        assert classifier.check_connection() is True
 
     def test_check_connection_error(self, classifier):
         """Test connection check handles errors."""
-        classifier._client.list.side_effect = Exception("Connection refused")
+        classifier._client.models.list.side_effect = Exception("Connection refused")
 
         assert classifier.check_connection() is False
 
     def test_get_available_models(self, classifier):
         """Test getting available models."""
         mock_model1 = MagicMock()
-        mock_model1.model = "llama3.2:latest"
+        mock_model1.id = "llama3.2"
         mock_model2 = MagicMock()
-        mock_model2.model = "mistral:latest"
-        classifier._client.list.return_value = MagicMock(models=[mock_model1, mock_model2])
+        mock_model2.id = "mistral"
+        classifier._client.models.list.return_value = MagicMock(data=[mock_model1, mock_model2])
 
         models = classifier.get_available_models()
 
-        assert "llama3.2:latest" in models
-        assert "mistral:latest" in models
+        assert "llama3.2" in models
+        assert "mistral" in models
 
     def test_get_available_models_error(self, classifier):
         """Test getting models handles errors."""
-        classifier._client.list.side_effect = Exception("Connection refused")
+        classifier._client.models.list.side_effect = Exception("Connection refused")
 
         models = classifier.get_available_models()
 

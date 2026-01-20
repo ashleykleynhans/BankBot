@@ -21,7 +21,7 @@ def mock_config():
     """Create a mock config."""
     return {
         "bank": "fnb",
-        "ollama": {
+        "llm": {
             "host": "localhost",
             "port": 11434,
             "model": "llama3.2",
@@ -316,7 +316,7 @@ class TestMain:
         """Test main with list command."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -351,7 +351,7 @@ class TestMain:
         """Test main with stats command."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -366,7 +366,7 @@ class TestMain:
         """Test main with categories command."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -381,7 +381,7 @@ class TestMain:
         """Test main with search command."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -396,7 +396,7 @@ class TestMain:
         """Test main with parsers command."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -411,7 +411,7 @@ class TestMain:
         """Test main with import command."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -426,7 +426,7 @@ class TestMain:
         """Test main with watch command."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -441,7 +441,7 @@ class TestMain:
         """Test main with chat command."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -457,7 +457,7 @@ class TestMain:
         config_file = tmp_path / "custom.yaml"
         config_data = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": str(tmp_path / "test.db"), "statements_dir": str(tmp_path)},
         }
         config_file.write_text(yaml.dump(config_data))
@@ -474,7 +474,7 @@ class TestMain:
         """Test main with list command and limit."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -490,7 +490,7 @@ class TestMain:
         """Test main handles unknown command gracefully."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -510,7 +510,7 @@ class TestMain:
         """Test main with rename command."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -694,7 +694,7 @@ class TestCmdReimport:
 
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_reimport_no_ollama_connection(self, mock_db, mock_classifier, mock_config, tmp_path):
+    def test_reimport_no_llm_connection(self, mock_db, mock_classifier, mock_config, tmp_path):
         """Test reimport fails when Ollama not connected."""
         mock_classifier.return_value.check_connection.return_value = False
 
@@ -836,7 +836,7 @@ class TestCmdReimport:
         """Test main with reimport command."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -854,7 +854,7 @@ class TestCmdReimport:
         """Test main with reimport command and --bank option."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -903,7 +903,7 @@ class TestCmdServe:
         """Test main with serve command."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -918,7 +918,7 @@ class TestCmdServe:
         """Test main with serve command and options."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -1315,7 +1315,7 @@ class TestCmdDebugOcr:
         """Test main with debug-ocr command."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
@@ -1333,7 +1333,7 @@ class TestCmdDebugOcr:
         """Test main with debug-ocr command and options."""
         mock_config.return_value = {
             "bank": "fnb",
-            "ollama": {"host": "localhost", "port": 11434, "model": "llama3.2"},
+            "llm": {"host": "localhost", "port": 11434, "model": "llama3.2"},
             "paths": {"database": "test.db", "statements_dir": "./statements"},
         }
 
