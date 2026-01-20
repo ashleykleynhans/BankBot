@@ -563,7 +563,7 @@ class TestAskMethod:
                 "Your last grocery purchase was R500"
             )
 
-            result = chat.ask("when did I last buy groceries")
+            result, transactions = chat.ask("when did I last buy groceries")
 
             assert "500" in result
 
@@ -579,14 +579,14 @@ class TestAskMethod:
             chat._client.chat.completions.create.return_value = mock_openai_response("Response")
 
             # First query - should fetch transactions
-            chat.ask("show groceries")
-            assert len(chat._last_transactions) == 1
+            _, txns = chat.ask("show groceries")
+            assert len(txns) == 1
 
             # Reset mock to verify it's not called again
             mock_db.get_transactions_by_category.reset_mock()
 
             # Follow-up query - should use previous transactions
-            chat.ask("list them")
+            _, txns = chat.ask("list them")
 
             # Should NOT have fetched new transactions
             mock_db.get_transactions_by_category.assert_not_called()
@@ -1023,6 +1023,54 @@ class TestFollowUpContext:
 
             mock_db.get_all_transactions.assert_called()
 
+    def test_proper_noun_query_clears_previous_transactions(self, mock_db):
+        """Test querying for non-existent name clears previous transactions."""
+        subscriptions = [
+            {"date": "2025-01-15", "description": "Spotify", "amount": 120,
+             "category": "subscriptions", "transaction_type": "debit"},
+            {"date": "2025-01-15", "description": "Netflix", "amount": 230,
+             "category": "subscriptions", "transaction_type": "debit"},
+        ]
+        mock_db.get_all_categories.return_value = ["subscriptions", "groceries"]
+        mock_db.get_transactions_by_category.return_value = subscriptions
+        mock_db.search_transactions.return_value = []
+
+        with patch('src.chat.OpenAI'):
+            chat = ChatInterface(mock_db)
+            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
+
+            # First query - gets subscriptions
+            _, txns = chat.ask("show subscriptions")
+            assert txns == subscriptions
+
+            # Query for non-existent name - should clear and return empty
+            chat._client.chat.completions.create.return_value = mock_openai_response("Chanel Smith")
+            _, txns = chat.ask("List Chanel Smith payments")
+
+            # CRITICAL: returned transactions must be empty for non-existent names
+            assert txns == []
+
+    def test_proper_noun_query_via_ask_clears_transactions(self, mock_db):
+        """Test ask() properly clears transactions for proper noun queries."""
+        old_transactions = [
+            {"date": "2025-01-15", "description": "Old", "amount": 100,
+             "category": "other", "transaction_type": "debit"},
+        ]
+
+        with patch('src.chat.OpenAI'):
+            chat = ChatInterface(mock_db)
+            chat._client.chat.completions.create.return_value = mock_openai_response("No results")
+            mock_db.search_transactions.return_value = []
+
+            # Simulate having old transactions from previous query
+            chat._last_transactions = old_transactions
+
+            # Query with proper nouns should clear and search fresh
+            _, txns = chat.ask("Chanel Smith payments")
+
+            # Must return empty since search found nothing
+            assert txns == []
+
 
 class TestScopeExpansion:
     """Tests for scope expansion requests (e.g., 'check all history')."""
@@ -1067,11 +1115,11 @@ class TestScopeExpansion:
             mock_db.get_transactions_by_category.return_value = groceries
 
             # Scope expansion request
-            chat.ask("check all history not just this month")
+            _, txns = chat.ask("check all history not just this month")
 
             # Should have re-searched with previous query (groceries)
             mock_db.get_transactions_by_category.assert_called_with("groceries")
-            assert chat._last_transactions == groceries
+            assert txns == groceries
 
     def test_scope_expansion_patterns(self, mock_db):
         """Test various scope expansion patterns are detected."""
@@ -1099,7 +1147,7 @@ class TestScopeExpansion:
 
             mock_db.get_all_transactions.return_value = []
             mock_db.search_transactions.return_value = []
-            chat.ask("check all history")
+            _, txns = chat.ask("check all history")
 
             # Should fall through to else branch (normal search), not scope expansion
             # The _last_search_query should now be set to the current query
@@ -1360,10 +1408,11 @@ class TestBudgetUpdate:
         mock_db.get_category_summary_for_statement.return_value = [
             {"category": "groceries", "total_debits": 300.0}
         ]
-        result = chat.ask("set groceries budget to R500")
+        result, txns = chat.ask("set groceries budget to R500")
         assert "budget is R500.00" in result
         assert "spent R300.00" in result
         assert "60% used" in result
+        assert txns == []  # Budget updates return no transactions
         mock_db.upsert_budget.assert_called_with("groceries", 500.0)
         # LLM should not be called for budget updates
         chat._client.chat.assert_not_called()

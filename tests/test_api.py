@@ -340,8 +340,8 @@ class TestWebSocketChat:
         with patch('src.api.routers.chat.session_manager') as mock_manager:
             mock_session = Mock()
             mock_session.session_id = "test-session-id"
-            mock_session.chat_interface.ask.return_value = "Test response"
-            mock_session.chat_interface._last_transactions = []
+            # ask() returns (response_text, transactions) tuple
+            mock_session.chat_interface.ask.return_value = ("Test response", [])
             mock_manager.create_session.return_value = mock_session
 
             with client.websocket_connect("/ws/chat") as websocket:

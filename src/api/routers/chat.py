@@ -104,11 +104,11 @@ async def websocket_chat(websocket: WebSocket) -> None:
 
                 try:
                     # Use the ChatInterface's ask method
-                    response_text = session.chat_interface.ask(query)
+                    # Returns (response_text, transactions) tuple
+                    response_text, transactions = session.chat_interface.ask(query)
 
-                    # Get relevant transactions from the last query
-                    # Send more than needed since frontend filters out fees
-                    transactions = session.chat_interface._last_transactions[:20]
+                    # Limit to 20 transactions, frontend filters out fees
+                    transactions = transactions[:20]
 
                     await websocket.send_json(
                         {

@@ -383,31 +383,9 @@ class ChatInterface:
 
     def _extract_search_terms(self, query: str) -> list[str]:
         """Extract and correct search terms from query using LLM."""
-        try:
-            response = self._client.chat.completions.create(
-                model=self.model,
-                messages=[{
-                    "role": "user",
-                    "content": f"""In this query, what merchant/company/store is the user asking about? If misspelled, correct it.
-Answer with ONLY the name, nothing else.
+        query_lower = query.lower()
 
-Query: {query}"""
-                }],
-                temperature=0
-            )
-            terms_text = response.choices[0].message.content.strip()
-            # Extract just the company name - handle various LLM output formats
-            # e.g., "Netflix", "Metaflix -> Netflix", "Woolworths (also known as Woolies)"
-            # Look for the last capitalized word (usually the corrected name)
-            words = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', terms_text)
-            if words:
-                clean_term = words[-1].lower()  # Take the last proper noun
-                if len(clean_term) > 1:
-                    return [clean_term]
-        except Exception:
-            pass  # Fall back to simple extraction
-
-        # Fallback: simple extraction without LLM
+        # First, do simple extraction to get terms from the actual query
         stop_words = {
             "when", "did", "i", "the", "a", "an", "to", "for", "of", "in",
             "my", "me", "last", "first", "how", "much", "many", "what",
@@ -415,9 +393,67 @@ Query: {query}"""
             "paid", "spend", "spent", "make", "made", "payment", "payments",
             "send", "sent", "transfer", "transferred", "buy", "bought",
         }
-        words = re.findall(r"\b[a-zA-Z]+(?:-[a-zA-Z]+)*\b", query.lower())
-        terms = [w for w in words if w not in stop_words and len(w) > 2]
-        return terms
+        simple_terms = re.findall(r"\b[a-zA-Z]+(?:-[a-zA-Z]+)*\b", query_lower)
+        simple_terms = [w for w in simple_terms if w not in stop_words and len(w) > 2]
+
+        # Try LLM for typo correction only
+        try:
+            response = self._client.chat.completions.create(
+                model=self.model,
+                messages=[{
+                    "role": "user",
+                    "content": f"""In this query, what merchant/company/store is the user asking about? If misspelled, correct it.
+Answer with ONLY the name, nothing else. If you cannot determine the merchant, reply with "unknown".
+
+Query: {query}"""
+                }],
+                temperature=0
+            )
+            terms_text = response.choices[0].message.content.strip().lower()
+
+            # Reject if LLM says unknown or returns something not in the query
+            if terms_text and terms_text != "unknown":
+                # Handle "X -> Y" format (e.g., "Metaflix -> Netflix")
+                # This indicates explicit correction, so trust the right side
+                if "->" in terms_text:
+                    right_side = terms_text.split("->")[-1].strip()
+                    right_words = re.findall(r'\b[a-z]+\b', right_side)
+                    if right_words:
+                        return [right_words[0]]
+
+                # Validate: the LLM term must actually appear in the original query
+                # or be a very close typo correction (edit distance <= 2)
+                llm_words = re.findall(r'\b[a-z]+\b', terms_text)
+                for llm_word in llm_words:
+                    if len(llm_word) < 3:
+                        continue
+                    # Check if LLM term appears in original query (substring match)
+                    if llm_word in query_lower:
+                        return [llm_word]
+                    # Check for typo correction: term must be very similar to a query word
+                    for query_word in simple_terms:
+                        # Very close typo (e.g., sportify -> spotify): similar length, differ by 1-2 chars
+                        len_diff = abs(len(llm_word) - len(query_word))
+                        if len_diff <= 1:
+                            # Compare character by character, accounting for inserted/deleted char
+                            shorter, longer = (llm_word, query_word) if len(llm_word) <= len(query_word) else (query_word, llm_word)
+                            # Simple diff count for same length
+                            if len_diff == 0:
+                                diffs = sum(1 for a, b in zip(llm_word, query_word) if a != b)
+                            else:
+                                # For length diff of 1, check if removing one char makes them match
+                                diffs = len(longer)  # Start with max diff
+                                for i in range(len(longer)):
+                                    # Try removing char at position i from longer string
+                                    modified = longer[:i] + longer[i+1:]
+                                    diffs = min(diffs, sum(1 for a, b in zip(shorter, modified) if a != b))
+                            if diffs <= 2:
+                                return [llm_word]
+        except Exception:
+            pass  # Fall back to simple extraction
+
+        # Return simple extraction from the original query
+        return simple_terms
 
     def _detect_price_change(self, transactions: list[dict]) -> str | None:
         """Detect price changes in recurring transactions (e.g., subscriptions)."""
@@ -755,12 +791,18 @@ Answer concisely and directly."""
 
         return None
 
-    def ask(self, query: str) -> str:
-        """Single query method for non-interactive use."""
+    def ask(self, query: str) -> tuple[str, list[dict]]:
+        """Single query method for non-interactive use.
+
+        Returns:
+            Tuple of (response_text, relevant_transactions)
+        """
         # Check if this is a budget update request
         budget_response = self._handle_budget_update(query)
         if budget_response:
-            return budget_response
+            # Budget updates don't have associated transactions
+            self._last_transactions = []
+            return budget_response, []
 
         # Check if user wants to expand search scope from previous query
         if self._is_scope_expansion_request(query) and self._last_search_query:
@@ -773,14 +815,15 @@ Answer concisely and directly."""
         elif self._is_follow_up_query(query) and self._last_transactions:
             relevant_transactions = self._last_transactions
         else:
-            # Clear previous transactions before searching
+            # New query - clear and search fresh
             self._last_transactions = []
             relevant_transactions = self._find_relevant_transactions(query)
             self._last_transactions = relevant_transactions
             self._last_search_query = query
 
         context = self._build_context(relevant_transactions, query)
-        return self._get_llm_response(query, context)
+        response = self._get_llm_response(query, context)
+        return response, relevant_transactions
 
     def clear_context(self) -> None:
         """Clear conversation history and cached transactions."""
