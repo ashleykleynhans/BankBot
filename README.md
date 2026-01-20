@@ -1,7 +1,7 @@
 # BankBot
 
 A local-first application that parses South African bank statement PDFs, auto-classifies
-transactions using a local LLM (Ollama), and lets you explore your spending through a
+transactions using a local LLM, and lets you explore your spending through a
 modern web UI or CLI chat interface. All data stays on your machine.
 
 ## Supported Banks
@@ -19,7 +19,7 @@ Want to add support for another bank? See [Adding Support for New Banks](
 ## Features
 
 - **PDF Parsing**: Extract transactions from bank statement PDFs
-- **Auto-Classification**: Uses Ollama to categorize transactions (doctor, groceries, utilities, etc.)
+- **Auto-Classification**: Uses local LLM to categorize transactions (doctor, groceries, utilities, etc.)
 - **Chat Interface**: Ask natural language questions about your spending
 - **REST + WebSocket API**: Integrate with frontend applications
 - **Web Frontend**: Svelte-based dashboard with chat, transactions, and analytics
@@ -32,20 +32,20 @@ Want to add support for another bank? See [Adding Support for New Banks](
 
 - **Backend**: Python 3.11+ (FastAPI, SQLite)
 - **Frontend**: Svelte 5, Tailwind CSS
-- **AI**: [Ollama](https://ollama.ai/) (local LLM)
+- **AI**: Any OpenAI-compatible API (e.g., [LM Studio](https://lmstudio.ai/))
 
 ## Requirements
 
 - Python 3.11+
 - Node.js 18+
-- [Ollama](https://ollama.ai/) running locally
+- [LM Studio](https://lmstudio.ai/) or any OpenAI-compatible LLM server
 
 ## Installation
 
 ```bash
 # Clone the repository
 git clone <repo-url>
-cd statement-chat
+cd BankBot
 
 # Create virtual environment
 python3.12 -m venv .venv
@@ -60,17 +60,18 @@ pip install -e ".[test]"
 
 ## Setup
 
-1. **Start Ollama** and pull a model:
-   ```bash
-   ollama serve
-   ollama pull llama3.2
-   ```
+1. **Start LM Studio** and load a model:
+   - Download and install [LM Studio](https://lmstudio.ai/)
+   - Download a model (e.g., `openai/gpt-oss-20b`)
+   - Start the local server (default port: 1234)
 
 2. **Configure** (optional - edit `config.yaml`):
    ```yaml
    bank: fnb                    # Bank parser to use
-   ollama:
-     model: llama3.2           # Ollama model for classification
+   llm:
+     host: localhost
+     port: 1234                 # LM Studio default port
+     model: openai/gpt-oss-20b  # Model for classification
    ```
 
 3. **Add statements**: Place PDF bank statements in the `statements/` directory
@@ -82,51 +83,51 @@ pip install -e ".[test]"
 source .venv/bin/activate
 
 # Import all PDF statements
-python -m src.main import
+bankbot import
 
 # Watch for new statements (auto-import)
-python -m src.main watch
+bankbot watch
 
 # Start interactive chat
-python -m src.main chat
+bankbot chat
 
 # List recent transactions
-python -m src.main list
-python -m src.main list -n 50    # Show 50 transactions
+bankbot list
+bankbot list -n 50    # Show 50 transactions
 
 # Search transactions
-python -m src.main search "doctor"
-python -m src.main search "woolworths"
+bankbot search "doctor"
+bankbot search "woolworths"
 
 # View spending by category
-python -m src.main categories
+bankbot categories
 
 # Database statistics
-python -m src.main stats
+bankbot stats
 
 # List available bank parsers
-python -m src.main parsers
+bankbot parsers
 
 # Rename PDFs to standardized format: {number}_{month}_{year}.pdf
 # This ensures statements are imported in chronological order
-python -m src.main rename
+bankbot rename
 
 # Re-import a specific statement (useful after updating classification rules)
-python -m src.main reimport statements/288_Nov_2025.pdf
+bankbot reimport statements/288_Nov_2025.pdf
 
 # Re-import all statements
-python -m src.main reimport all
+bankbot reimport --all
 
 # Export budgets to JSON or YAML
-python -m src.main export-budget budgets.json
-python -m src.main export-budget budgets.yaml
+bankbot export-budget budgets.json
+bankbot export-budget budgets.yaml
 
 # Import budgets from file (clears existing budgets first)
-python -m src.main import-budget budgets.json
+bankbot import-budget budgets.json
 
 # Start API server (REST + WebSocket)
-python -m src.main serve
-python -m src.main serve --host 0.0.0.0 --port 3000
+bankbot serve
+bankbot serve --host 0.0.0.0 --port 3000
 ```
 
 ## Re-importing Statements
@@ -135,7 +136,7 @@ If you update classification rules in `config.yaml`, you'll need to clear the da
 
 ```bash
 # Delete the database and re-import all statements
-rm ./data/statements.db && python -m src.main import
+rm ./data/statements.db && bankbot import
 ```
 
 ## Chat Examples
@@ -143,7 +144,7 @@ rm ./data/statements.db && python -m src.main import
 Once you've imported statements, start a chat session:
 
 ```
-$ python -m src.main chat
+$ bankbot chat
 
 You: When did I last pay the doctor?
 Assistant: Your last payment to a doctor was on 2024-01-15 for R850.00...
@@ -188,11 +189,11 @@ Edit `config.yaml` to customize:
 # Bank parser to use
 bank: fnb
 
-# Ollama settings
-ollama:
+# LLM settings (OpenAI-compatible API)
+llm:
   host: localhost
-  port: 11434
-  model: llama3.2
+  port: 1234
+  model: openai/gpt-oss-20b
 
 # File paths
 paths:
@@ -226,7 +227,7 @@ classification_rules:
 
 ## API
 
-Start the API server with `python -m src.main serve`. Interactive docs available at `http://localhost:8000/docs`.
+Start the API server with `bankbot serve`. Interactive docs available at `http://localhost:8000/docs`.
 
 ### REST Endpoints
 
@@ -294,7 +295,7 @@ You need two terminals:
 ```bash
 # Terminal 1: Start the backend API
 source .venv/bin/activate
-python -m src.main serve
+bankbot serve
 
 # Terminal 2: Start the frontend
 cd frontend
@@ -323,14 +324,14 @@ The built files will be in `frontend/dist/`.
 ## Project Structure
 
 ```
-statement-chat/
+BankBot/
 ├── statements/           # Place PDF files here
 ├── data/
 │   └── statements.db    # SQLite database (includes budgets table)
 ├── src/
 │   ├── main.py          # CLI entry point
 │   ├── database.py      # Database operations
-│   ├── classifier.py    # Ollama classifier
+│   ├── classifier.py    # LLM classifier
 │   ├── chat.py          # Chat interface
 │   ├── watcher.py       # File watcher
 │   ├── config.py        # Config loader
@@ -371,7 +372,7 @@ statement-chat/
 
 Your bank statements contain sensitive financial data. This application:
 - Processes everything locally (no cloud services)
-- Uses a local LLM via Ollama
+- Uses a local LLM via OpenAI-compatible API
 - Stores data in a local SQLite database
 
 The `statements/` and `data/` directories are gitignored by default.
@@ -379,4 +380,3 @@ The `statements/` and `data/` directories are gitignored by default.
 ## License
 
 GPLv3
-
