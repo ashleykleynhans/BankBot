@@ -104,20 +104,26 @@ async def websocket_chat(websocket: WebSocket) -> None:
 
                 try:
                     # Use the ChatInterface's ask method
-                    # Returns (response_text, transactions) tuple
-                    response_text, transactions = session.chat_interface.ask(query)
+                    # Returns (response_text, transactions, llm_stats) tuple
+                    response_text, transactions, llm_stats = session.chat_interface.ask(query)
 
                     # Limit to 20 transactions, frontend filters out fees
                     transactions = transactions[:20]
 
+                    payload = {
+                        "message": response_text,
+                        "transactions": transactions,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+
+                    # Include LLM stats if available
+                    if llm_stats:
+                        payload["llm_stats"] = llm_stats
+
                     await websocket.send_json(
                         {
                             "type": "chat_response",
-                            "payload": {
-                                "message": response_text,
-                                "transactions": transactions,
-                                "timestamp": datetime.now().isoformat(),
-                            },
+                            "payload": payload,
                         }
                     )
                 except Exception as e:

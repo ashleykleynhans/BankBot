@@ -66,12 +66,12 @@ class TestGreetings:
 
     def test_hi_returns_no_transactions(self, chat):
         """Greeting 'Hi' should return empty transactions."""
-        response, transactions = chat.ask("Hi")
+        response, transactions, _ = chat.ask("Hi")
         assert transactions == []
 
     def test_hello_returns_no_transactions(self, chat):
         """Greeting 'Hello' should return empty transactions."""
-        response, transactions = chat.ask("Hello")
+        response, transactions, _ = chat.ask("Hello")
         assert transactions == []
 
 
@@ -87,7 +87,7 @@ class TestDoctorQueries:
              "category": "medical", "transaction_type": "debit"},
         ]
 
-        response, transactions = chat.ask("When last did I pay the doctor?")
+        response, transactions, _ = chat.ask("When last did I pay the doctor?")
 
         # Should return only the most recent (when last = 1 transaction)
         assert len(transactions) == 1
@@ -108,7 +108,7 @@ class TestBudgetQueries:
             {"category": "medical", "total_debits": -7000.00},
         ]
 
-        response, transactions = chat.ask("How much budget remaining?")
+        response, transactions, _ = chat.ask("How much budget remaining?")
 
         # Budget queries don't return transactions
         assert transactions == []
@@ -123,7 +123,7 @@ class TestBudgetQueries:
             {"category": "medical", "total_debits": -7500.00},
         ]
 
-        response, transactions = chat.ask("What's my medical budget?")
+        response, transactions, _ = chat.ask("What's my medical budget?")
 
         assert transactions == []
         mock_db.get_all_budgets.assert_called()
@@ -132,7 +132,7 @@ class TestBudgetQueries:
         """'What's my groceries budget?' when not set should indicate no budget."""
         mock_db.get_all_budgets.return_value = []  # No budgets set
 
-        response, transactions = chat.ask("What's my groceries budget?")
+        response, transactions, _ = chat.ask("What's my groceries budget?")
 
         # Should still work, LLM will say no budget set
         assert transactions == []
@@ -147,7 +147,7 @@ class TestBudgetManagement:
             {"category": "groceries", "total_debits": -3000.00},
         ]
 
-        response, transactions = chat.ask("Set groceries budget to R5000")
+        response, transactions, _ = chat.ask("Set groceries budget to R5000")
 
         mock_db.upsert_budget.assert_called_once_with("groceries", 5000.0)
         assert "5,000" in response or "5000" in response
@@ -157,7 +157,7 @@ class TestBudgetManagement:
         """'remove groceries budget' should delete budget."""
         mock_db.delete_budget.return_value = True
 
-        response, transactions = chat.ask("remove groceries budget")
+        response, transactions, _ = chat.ask("remove groceries budget")
 
         mock_db.delete_budget.assert_called_once_with("groceries")
         assert "deleted" in response.lower()
@@ -167,18 +167,18 @@ class TestBudgetManagement:
         """Test full budget workflow: check -> set -> remove -> check."""
         # Initial check - no budget
         mock_db.get_all_budgets.return_value = []
-        response1, txs1 = chat.ask("What's my groceries budget?")
+        response1, txs1, _ = chat.ask("What's my groceries budget?")
         assert txs1 == []
 
         # Set budget
         mock_db.get_category_summary_for_statement.return_value = []
-        response2, txs2 = chat.ask("Set groceries budget to R5000")
+        response2, txs2, _ = chat.ask("Set groceries budget to R5000")
         mock_db.upsert_budget.assert_called_with("groceries", 5000.0)
         assert txs2 == []
 
         # Remove budget
         mock_db.delete_budget.return_value = True
-        response3, txs3 = chat.ask("remove groceries budget")
+        response3, txs3, _ = chat.ask("remove groceries budget")
         mock_db.delete_budget.assert_called_with("groceries")
         assert txs3 == []
 
@@ -197,7 +197,7 @@ class TestDescriptionFiltering:
              "category": "home_maintenance", "transaction_type": "debit"},
         ]
 
-        response, transactions = chat.ask("How much did I spend on roof repairs?")
+        response, transactions, _ = chat.ask("How much did I spend on roof repairs?")
 
         # Should only return transactions with "roof" in description
         assert len(transactions) == 2
@@ -212,7 +212,7 @@ class TestDescriptionFiltering:
              "category": "home_maintenance", "transaction_type": "debit"},
         ]
 
-        response, transactions = chat.ask("How much did I spend on ceiling repairs?")
+        response, transactions, _ = chat.ask("How much did I spend on ceiling repairs?")
 
         # Should only return transactions with "ceiling" in description
         assert len(transactions) == 1
@@ -229,7 +229,7 @@ class TestFloristQueries:
              "category": "florist", "transaction_type": "debit"},
         ]
 
-        response, transactions = chat.ask("When did I buy my fiance flowers?")
+        response, transactions, _ = chat.ask("When did I buy my fiance flowers?")
 
         mock_db.get_transactions_by_category.assert_called_with("florist")
         assert len(transactions) == 1
@@ -246,7 +246,7 @@ class TestTypoCorrection:
         # No transactions match "Chanel Smith"
         mock_db.search_transactions.return_value = []
 
-        response, transactions = chat.ask("List Chanel Smith payments")
+        response, transactions, _ = chat.ask("List Chanel Smith payments")
 
         # Should return empty, not 1000+ "Purchase" transactions
         assert len(transactions) == 0
@@ -263,7 +263,7 @@ class TestTypoCorrection:
              "category": "subscriptions", "transaction_type": "debit"},
         ]
 
-        response, transactions = chat.ask("when did the sportify price increase?")
+        response, transactions, _ = chat.ask("when did the sportify price increase?")
 
         assert len(transactions) == 2
 
@@ -277,7 +277,7 @@ class TestTypoCorrection:
              "category": "subscriptions", "transaction_type": "debit"},
         ]
 
-        response, transactions = chat.ask("How much did I spent on Metaflix?")
+        response, transactions, _ = chat.ask("How much did I spent on Metaflix?")
 
         # Should find Netflix transactions
         mock_db.search_transactions.assert_called_with("netflix")
@@ -297,7 +297,7 @@ class TestHyphenVariations:
               "category": "medical", "transaction_type": "debit"}],  # "x-ray" - found
         ]
 
-        response, transactions = chat.ask("Show xray transactions")
+        response, transactions, _ = chat.ask("Show xray transactions")
 
         # Should have tried "x-ray" variation
         calls = [call[0][0] for call in mock_db.search_transactions.call_args_list]
@@ -315,7 +315,7 @@ class TestSingleTransactionQueries:
              "category": "transfer", "transaction_type": "debit"},
         ]
 
-        response, transactions = chat.ask("Did I pay Paul?")
+        response, transactions, _ = chat.ask("Did I pay Paul?")
 
         assert len(transactions) == 1
         mock_db.search_transactions.assert_called()
@@ -333,7 +333,7 @@ class TestSubscriptionQueries:
              "category": "subscriptions", "transaction_type": "debit"},
         ]
 
-        response, transactions = chat.ask("How much did I spend on spotify?")
+        response, transactions, _ = chat.ask("How much did I spend on spotify?")
 
         assert len(transactions) == 2
 
@@ -356,7 +356,7 @@ class TestPriceChangeDetection:
              "category": "subscriptions", "transaction_type": "debit"},
         ]
 
-        response, transactions = chat.ask("When did the Metaflix price increase?")
+        response, transactions, _ = chat.ask("When did the Metaflix price increase?")
 
         # Response should be deterministic (bypasses LLM)
         assert "Netflix" in response
@@ -376,7 +376,7 @@ class TestPriceChangeDetection:
         ]
 
         # LLM should not be called for the response (only for search term extraction)
-        response, transactions = chat.ask("When did spotify price increase?")
+        response, transactions, _ = chat.ask("When did spotify price increase?")
 
         # Response format is deterministic
         assert "Spotify" in response
@@ -394,7 +394,7 @@ class TestPriceChangeDetection:
              "category": "subscriptions", "transaction_type": "debit"},
         ]
 
-        response, transactions = chat.ask("When did netflix price change?")
+        response, transactions, _ = chat.ask("When did netflix price change?")
 
         assert "stayed the same" in response
         assert "Netflix" in response
@@ -460,7 +460,7 @@ class TestPriceDecrease:
              "category": "subscriptions", "transaction_type": "debit"},
         ]
 
-        response, transactions = chat.ask("When did netflix price change?")
+        response, transactions, _ = chat.ask("When did netflix price change?")
 
         assert "Netflix" in response
         assert "decreased" in response

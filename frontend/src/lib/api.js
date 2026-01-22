@@ -187,3 +187,27 @@ export async function deleteAllBudgets() {
     method: 'DELETE',
   });
 }
+
+// ============ Export API ============
+
+/**
+ * Build URL for exporting transactions as CSV.
+ * @param {Object} filters - Optional filter parameters
+ * @param {string} filters.q - Search query
+ * @param {string} filters.category - Category filter
+ * @param {string} filters.statement - Statement number
+ * @param {string} filters.start_date - Start date (YYYY-MM-DD)
+ * @param {string} filters.end_date - End date (YYYY-MM-DD)
+ * @returns {string} Export URL
+ */
+export function getExportUrl(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.q) params.append('q', filters.q);
+  if (filters.category) params.append('category', filters.category);
+  if (filters.statement) params.append('statement', filters.statement);
+  if (filters.start_date) params.append('start_date', filters.start_date);
+  if (filters.end_date) params.append('end_date', filters.end_date);
+
+  const queryString = params.toString();
+  return `${BASE_URL}/transactions/export${queryString ? '?' + queryString : ''}`;
+}

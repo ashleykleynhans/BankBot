@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from datetime import datetime, timedelta
 
 from openai import OpenAI
@@ -31,6 +32,7 @@ class ChatInterface:
         self._conversation_history = []
         self._last_transactions = []  # Store last query's transactions for follow-ups
         self._last_search_query = ""  # Store last search query for scope expansion
+        self._last_llm_stats = None  # Store LLM performance stats
 
     def start(self) -> None:
         """Start the interactive chat loop."""
@@ -682,12 +684,39 @@ Answer concisely and directly."""
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(self._conversation_history)
 
+            start_time = time.time()
             response = self._client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=0.3
             )
+            elapsed_time = time.time() - start_time
+
             assistant_response = response.choices[0].message.content.strip()
+
+            # Extract token usage if available
+            usage = getattr(response, 'usage', None)
+            if usage:
+                completion_tokens = getattr(usage, 'completion_tokens', 0)
+                prompt_tokens = getattr(usage, 'prompt_tokens', 0)
+                total_tokens = getattr(usage, 'total_tokens', 0)
+            else:
+                # Estimate tokens (~4 chars per token)
+                completion_tokens = len(assistant_response) // 4
+                prompt_tokens = sum(len(m.get('content', '')) for m in messages) // 4
+                total_tokens = completion_tokens + prompt_tokens
+
+            # Calculate tokens per second (completion tokens / time)
+            tokens_per_second = completion_tokens / elapsed_time if elapsed_time > 0 else 0
+
+            # Store stats for retrieval
+            self._last_llm_stats = {
+                'completion_tokens': completion_tokens,
+                'prompt_tokens': prompt_tokens,
+                'total_tokens': total_tokens,
+                'elapsed_time': round(elapsed_time, 2),
+                'tokens_per_second': round(tokens_per_second, 1),
+            }
 
             # Add assistant response to history
             self._conversation_history.append({
@@ -699,6 +728,7 @@ Answer concisely and directly."""
         except Exception as e:
             # Remove the failed user message from history
             self._conversation_history.pop()
+            self._last_llm_stats = None
             return f"Sorry, I couldn't process your request. Error: {str(e)}"
 
     def _display_transactions(self, transactions: list[dict]) -> None:
@@ -818,18 +848,19 @@ Answer concisely and directly."""
                 return word.strip(".,")
         return "this service"
 
-    def ask(self, query: str) -> tuple[str, list[dict]]:
+    def ask(self, query: str) -> tuple[str, list[dict], dict | None]:
         """Single query method for non-interactive use.
 
         Returns:
-            Tuple of (response_text, relevant_transactions)
+            Tuple of (response_text, relevant_transactions, llm_stats)
+            llm_stats is None if LLM was not used (e.g., price change queries)
         """
         # Check if this is a budget update request
         budget_response = self._handle_budget_update(query)
         if budget_response:
             # Budget updates don't have associated transactions
             self._last_transactions = []
-            return budget_response, []
+            return budget_response, [], None
 
         # Check if user wants to expand search scope from previous query
         if self._is_scope_expansion_request(query) and self._last_search_query:
@@ -861,31 +892,29 @@ Answer concisely and directly."""
                 # Extract details from price_change string: "PRICE INCREASED in June 2025 from R199.00 to R229.00"
                 if "INCREASED" in price_change:
                     # Parse: "PRICE INCREASED in Month Year from R X to R Y"
-                    import re
                     match = re.search(r"in (.+?) from R([\d.]+) to R([\d.]+)", price_change)
                     if match:
                         month = match.group(1)
                         old_price = match.group(2)
                         new_price = match.group(3)
                         response = f"Your {merchant} price increased in {month} from R{old_price} to R{new_price}."
-                        return response, relevant_transactions
+                        return response, relevant_transactions, None
                 elif "DECREASED" in price_change:
-                    import re
                     match = re.search(r"in (.+?) from R([\d.]+) to R([\d.]+)", price_change)
                     if match:
                         month = match.group(1)
                         old_price = match.group(2)
                         new_price = match.group(3)
                         response = f"Your {merchant} price decreased in {month} from R{old_price} to R{new_price}."
-                        return response, relevant_transactions
+                        return response, relevant_transactions, None
             else:
                 # No price change detected
                 response = f"Your {merchant} price has stayed the same."
-                return response, relevant_transactions
+                return response, relevant_transactions, None
 
         context = self._build_context(relevant_transactions, query)
         response = self._get_llm_response(query, context)
-        return response, relevant_transactions
+        return response, relevant_transactions, self._last_llm_stats
 
     def clear_context(self) -> None:
         """Clear conversation history and cached transactions."""

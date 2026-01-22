@@ -206,6 +206,135 @@ class TestTransactionEndpoints:
         mock_db.get_transactions_by_statement.assert_called_with("123")
 
 
+class TestTransactionExport:
+    """Tests for transaction CSV export endpoint."""
+
+    def test_export_all_transactions(self, client, mock_db):
+        """Test exporting all transactions."""
+        mock_db.get_all_transactions.return_value = [
+            {
+                "id": 1,
+                "date": "2025-01-15",
+                "description": "Woolworths",
+                "amount": 500.00,
+                "transaction_type": "debit",
+                "category": "groceries",
+                "balance": 10000.00,
+                "statement_number": "123",
+                "reference": "REF001",
+                "recipient_or_payer": "Woolworths Store",
+            }
+        ]
+
+        response = client.get("/api/v1/transactions/export")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/csv; charset=utf-8"
+        assert "attachment" in response.headers["content-disposition"]
+        assert "transactions_" in response.headers["content-disposition"]
+        assert ".csv" in response.headers["content-disposition"]
+
+        # Parse CSV content
+        import csv
+        import io
+
+        reader = csv.reader(io.StringIO(response.text))
+        rows = list(reader)
+
+        # Check header
+        assert rows[0] == [
+            "Date",
+            "Description",
+            "Amount",
+            "Type",
+            "Category",
+            "Balance",
+            "Statement",
+            "Reference",
+            "Recipient/Payer",
+        ]
+        # Check data row
+        assert rows[1][0] == "2025-01-15"
+        assert rows[1][1] == "Woolworths"
+        assert rows[1][2] == "500.0"
+        assert rows[1][3] == "debit"
+        assert rows[1][4] == "groceries"
+
+    def test_export_with_search(self, client, mock_db):
+        """Test exporting with search query."""
+        mock_db.search_transactions.return_value = [
+            {
+                "id": 1,
+                "date": "2025-01-15",
+                "description": "Woolworths",
+                "amount": 500.00,
+                "transaction_type": "debit",
+                "category": "groceries",
+            }
+        ]
+
+        response = client.get("/api/v1/transactions/export?q=woolworths")
+
+        assert response.status_code == 200
+        mock_db.search_transactions.assert_called_with("woolworths")
+
+    def test_export_with_category(self, client, mock_db):
+        """Test exporting with category filter."""
+        mock_db.get_transactions_by_category.return_value = []
+
+        response = client.get("/api/v1/transactions/export?category=groceries")
+
+        assert response.status_code == 200
+        mock_db.get_transactions_by_category.assert_called_with("groceries")
+
+    def test_export_with_statement(self, client, mock_db):
+        """Test exporting with statement filter."""
+        mock_db.get_transactions_by_statement.return_value = []
+
+        response = client.get("/api/v1/transactions/export?statement=287")
+
+        assert response.status_code == 200
+        mock_db.get_transactions_by_statement.assert_called_with("287")
+
+    def test_export_with_date_range(self, client, mock_db):
+        """Test exporting with date range filter."""
+        mock_db.get_transactions_in_date_range.return_value = []
+
+        response = client.get(
+            "/api/v1/transactions/export?start_date=2025-01-01&end_date=2025-01-31"
+        )
+
+        assert response.status_code == 200
+        mock_db.get_transactions_in_date_range.assert_called_with(
+            "2025-01-01", "2025-01-31"
+        )
+
+    def test_export_invalid_date_range(self, client, mock_db):
+        """Test export with invalid date range returns error."""
+        response = client.get(
+            "/api/v1/transactions/export?start_date=2025-01-31&end_date=2025-01-01"
+        )
+
+        assert response.status_code == 400
+        assert "before" in response.json()["detail"]
+
+    def test_export_empty_results(self, client, mock_db):
+        """Test export with no matching transactions."""
+        mock_db.search_transactions.return_value = []
+
+        response = client.get("/api/v1/transactions/export?q=nonexistent")
+
+        assert response.status_code == 200
+
+        # Should still have header row
+        import csv
+        import io
+
+        reader = csv.reader(io.StringIO(response.text))
+        rows = list(reader)
+        assert len(rows) == 1  # Header only
+
+
 class TestSessionManager:
     """Tests for session management."""
 
@@ -340,8 +469,8 @@ class TestWebSocketChat:
         with patch('src.api.routers.chat.session_manager') as mock_manager:
             mock_session = Mock()
             mock_session.session_id = "test-session-id"
-            # ask() returns (response_text, transactions) tuple
-            mock_session.chat_interface.ask.return_value = ("Test response", [])
+            # ask() returns (response_text, transactions, llm_stats) tuple
+            mock_session.chat_interface.ask.return_value = ("Test response", [], None)
             mock_manager.create_session.return_value = mock_session
 
             with client.websocket_connect("/ws/chat") as websocket:
@@ -358,6 +487,39 @@ class TestWebSocketChat:
                 assert response["type"] == "chat_response"
                 assert response["payload"]["message"] == "Test response"
                 assert "timestamp" in response["payload"]
+
+    def test_websocket_chat_message_with_llm_stats(self, client, mock_db, mock_config):
+        """Test chat message response includes LLM stats when available."""
+        with patch('src.api.routers.chat.session_manager') as mock_manager:
+            mock_session = Mock()
+            mock_session.session_id = "test-session-id"
+            # Return LLM stats in the response
+            llm_stats = {
+                "completion_tokens": 50,
+                "prompt_tokens": 100,
+                "total_tokens": 150,
+                "elapsed_time": 1.5,
+                "tokens_per_second": 33.3,
+            }
+            mock_session.chat_interface.ask.return_value = ("Test response", [], llm_stats)
+            mock_manager.create_session.return_value = mock_session
+
+            with client.websocket_connect("/ws/chat") as websocket:
+                # Receive connected message
+                websocket.receive_json()
+
+                # Send chat message
+                websocket.send_json({
+                    "type": "chat",
+                    "payload": {"message": "Hello"}
+                })
+                response = websocket.receive_json()
+
+                assert response["type"] == "chat_response"
+                assert response["payload"]["message"] == "Test response"
+                assert "llm_stats" in response["payload"]
+                assert response["payload"]["llm_stats"]["tokens_per_second"] == 33.3
+                assert response["payload"]["llm_stats"]["elapsed_time"] == 1.5
 
     def test_websocket_empty_message(self, client, mock_db, mock_config):
         """Test sending empty message returns error."""

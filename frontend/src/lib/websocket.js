@@ -110,6 +110,7 @@ function handleMessage(data) {
           content: data.payload.message,
           transactions: data.payload.transactions || [],
           timestamp: data.payload.timestamp,
+          llmStats: data.payload.llm_stats || null,
         },
       ]);
       break;

@@ -338,13 +338,19 @@
       {/if}
     {/if}
 
-    <!-- Timestamp -->
+    <!-- Timestamp and LLM stats -->
     <div
-      class="text-xs mt-1 {message.role === 'user'
+      class="text-xs mt-1 flex items-center gap-2 {message.role === 'user'
         ? 'text-blue-200'
         : 'text-gray-400 dark:text-gray-500'}"
     >
-      {new Date(message.timestamp).toLocaleTimeString()}
+      <span>{new Date(message.timestamp).toLocaleTimeString()}</span>
+      {#if message.llmStats}
+        <span class="opacity-75">•</span>
+        <span title="Tokens per second">{message.llmStats.tokens_per_second} tok/s</span>
+        <span class="opacity-75">•</span>
+        <span title="Response time">{message.llmStats.elapsed_time}s</span>
+      {/if}
     </div>
   </div>
 </div>

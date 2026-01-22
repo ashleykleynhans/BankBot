@@ -12,6 +12,7 @@ def mock_openai_response(content: str) -> Mock:
     """Create a mock OpenAI chat completion response."""
     response = Mock()
     response.choices = [Mock(message=Mock(content=content))]
+    response.usage = None  # Explicitly set to None so code uses token estimation
     return response
 
 
@@ -563,7 +564,7 @@ class TestAskMethod:
                 "Your last grocery purchase was R500"
             )
 
-            result, transactions = chat.ask("when did I last buy groceries")
+            result, transactions, _ = chat.ask("when did I last buy groceries")
 
             assert "500" in result
 
@@ -579,14 +580,14 @@ class TestAskMethod:
             chat._client.chat.completions.create.return_value = mock_openai_response("Response")
 
             # First query - should fetch transactions
-            _, txns = chat.ask("show groceries")
+            _, txns, _ = chat.ask("show groceries")
             assert len(txns) == 1
 
             # Reset mock to verify it's not called again
             mock_db.get_transactions_by_category.reset_mock()
 
             # Follow-up query - should use previous transactions
-            _, txns = chat.ask("list them")
+            _, txns, _ = chat.ask("list them")
 
             # Should NOT have fetched new transactions
             mock_db.get_transactions_by_category.assert_not_called()
@@ -1040,12 +1041,12 @@ class TestFollowUpContext:
             chat._client.chat.completions.create.return_value = mock_openai_response("Response")
 
             # First query - gets subscriptions
-            _, txns = chat.ask("show subscriptions")
+            _, txns, _ = chat.ask("show subscriptions")
             assert txns == subscriptions
 
             # Query for non-existent name - should clear and return empty
             chat._client.chat.completions.create.return_value = mock_openai_response("Chanel Smith")
-            _, txns = chat.ask("List Chanel Smith payments")
+            _, txns, _ = chat.ask("List Chanel Smith payments")
 
             # CRITICAL: returned transactions must be empty for non-existent names
             assert txns == []
@@ -1066,7 +1067,7 @@ class TestFollowUpContext:
             chat._last_transactions = old_transactions
 
             # Query with proper nouns should clear and search fresh
-            _, txns = chat.ask("Chanel Smith payments")
+            _, txns, _ = chat.ask("Chanel Smith payments")
 
             # Must return empty since search found nothing
             assert txns == []
@@ -1115,7 +1116,7 @@ class TestScopeExpansion:
             mock_db.get_transactions_by_category.return_value = groceries
 
             # Scope expansion request
-            _, txns = chat.ask("check all history not just this month")
+            _, txns, _ = chat.ask("check all history not just this month")
 
             # Should have re-searched with previous query (groceries)
             mock_db.get_transactions_by_category.assert_called_with("groceries")
@@ -1147,7 +1148,7 @@ class TestScopeExpansion:
 
             mock_db.get_all_transactions.return_value = []
             mock_db.search_transactions.return_value = []
-            _, txns = chat.ask("check all history")
+            _, txns, _ = chat.ask("check all history")
 
             # Should fall through to else branch (normal search), not scope expansion
             # The _last_search_query should now be set to the current query
@@ -1408,7 +1409,7 @@ class TestBudgetUpdate:
         mock_db.get_category_summary_for_statement.return_value = [
             {"category": "groceries", "total_debits": 300.0}
         ]
-        result, txns = chat.ask("set groceries budget to R500")
+        result, txns, _ = chat.ask("set groceries budget to R500")
         assert "budget is R500.00" in result
         assert "spent R300.00" in result
         assert "60% used" in result
