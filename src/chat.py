@@ -693,6 +693,10 @@ Answer concisely and directly."""
             elapsed_time = time.time() - start_time
 
             assistant_response = response.choices[0].message.content.strip()
+            # Strip model reasoning/thinking tags and box formatting markers
+            assistant_response = re.sub(r'<think>.*?</think>\s*', '', assistant_response, flags=re.DOTALL)
+            assistant_response = re.sub(r'<\|begin_of_box\|>|<\|end_of_box\|>', '', assistant_response)
+            assistant_response = assistant_response.strip()
 
             # Extract token usage if available
             usage = getattr(response, 'usage', None)
