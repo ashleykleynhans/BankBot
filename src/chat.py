@@ -366,7 +366,12 @@ class ChatInterface:
                 # Fuzzy match: catch typos like "sportify" -> "spotify"
                 for brand in known_brands:
                     if abs(len(word) - len(brand)) <= 1 and _edit_distance(word, brand) <= 2:
-                        proper_nouns.append(brand.capitalize())
+                        # Replace the typo in proper_nouns if present (e.g., "Metaflix" -> "Netflix")
+                        typo_cap = word.capitalize()
+                        if typo_cap in proper_nouns:
+                            proper_nouns[proper_nouns.index(typo_cap)] = brand.capitalize()
+                        else:
+                            proper_nouns.append(brand.capitalize())
                         break
         if len(proper_nouns) >= 2:
             # Search for the full proper noun phrase (e.g., "Chanel Smith")
