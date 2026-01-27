@@ -385,6 +385,7 @@
 <div class="p-6 h-full overflow-y-auto">
   <div class="flex justify-between items-center mb-6">
     <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">Budget</h1>
+    {#if !error || !error.includes('No bank statements imported')}
     <div class="flex gap-2">
       <!-- Hidden file input for import -->
       <input
@@ -428,14 +429,32 @@
         {clearing ? 'Clearing...' : 'Clear All'}
       </button>
     </div>
+    {/if}
   </div>
 
   {#if error}
-    <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-400 mb-6">
-      {error}
-    </div>
+    {#if error.includes('No bank statements imported')}
+      <div class="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400">
+        <svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+        </svg>
+        <p class="text-lg font-medium">No bank statements imported</p>
+        <div class="mt-3 text-sm text-left bg-gray-100 dark:bg-gray-800 rounded-lg p-4 max-w-md">
+          <p class="mb-2">To get started:</p>
+          <ol class="list-decimal list-inside space-y-1">
+            <li>Place your bank statement PDFs in the <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">statements/</code> directory</li>
+            <li>Run <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">bankbot import</code></li>
+          </ol>
+        </div>
+      </div>
+    {:else}
+      <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-400 mb-6">
+        {error}
+      </div>
+    {/if}
   {/if}
 
+  {#if !error || !error.includes('No bank statements imported')}
   <!-- Add Budget Form -->
   <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
     <h2 class="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-100">Add Budget</h2>
@@ -623,5 +642,6 @@
       <p class="mb-2">No budgets set yet.</p>
       <p class="text-sm">Add a budget above to start tracking your spending.</p>
     </div>
+  {/if}
   {/if}
 </div>
