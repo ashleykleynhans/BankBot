@@ -557,7 +557,12 @@ Query: {query}"""
         ]
 
         if transactions:
-            context_parts.append(f"Found {len(transactions)} potentially relevant transactions.")
+            # Extract the dominant merchant/entity from transactions to anchor the LLM
+            merchant = self._extract_merchant_name(transactions)
+            if merchant and merchant != "this service":
+                context_parts.append(f"Found {len(transactions)} transactions for {merchant}.")
+            else:
+                context_parts.append(f"Found {len(transactions)} potentially relevant transactions.")
 
         # For price change queries, detect and include the answer
         if is_price_change_query and transactions:
@@ -716,8 +721,11 @@ Answer concisely and directly."""
 
         try:
             # Build messages with system prompt and conversation history
+            # Limit history to last 10 messages (5 exchanges) to prevent
+            # local LLMs from getting confused by older, unrelated queries
             messages = [{"role": "system", "content": system_prompt}]
-            messages.extend(self._conversation_history)
+            recent_history = self._conversation_history[-10:]
+            messages.extend(recent_history)
 
             start_time = time.time()
             response = self._client.chat.completions.create(
