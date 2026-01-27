@@ -39,7 +39,8 @@ class TransactionClassifier:
         self.classification_rules = classification_rules or {}
         self._client = OpenAI(
             base_url=f"http://{host}:{port}/v1",
-            api_key="lm-studio"
+            api_key="lm-studio",
+            timeout=30.0,
         )
 
     def _check_rules(self, description: str) -> str | None:
