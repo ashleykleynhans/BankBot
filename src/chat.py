@@ -694,6 +694,7 @@ When answering questions about spending or transactions:
 - For medical/doctor transactions: say "the doctor", not names from payment references
 - If user says "list", give a summary like "10 payments to Chanel Smith totaling R14,206.20" - do NOT list individual transactions (they can click "Show transactions")
 - NEVER use (x2), (x3), "twice", etc - NEVER combine multiple amounts on one line
+- When a transaction has a reference number or code (e.g. "Sw4255", "10391 Kleynhans"), put it in brackets after the description: "Roof Repairs (Sw4255)", "Ceiling Repairs (10391 Kleynhans)"
 
 For price change/increase questions:
 - Context will contain ">>> PRICE INCREASED in [Month Year] from R[amount] to R[amount] <<<"
@@ -739,6 +740,11 @@ Answer concisely and directly."""
             # local LLMs from getting confused by older, unrelated queries
             messages = [{"role": "system", "content": system_prompt}]
             recent_history = self._conversation_history[-10:]
+            # Ensure history starts with a user message so roles
+            # alternate correctly (system → user → assistant → …).
+            # Slicing can land on an assistant message mid-conversation.
+            while recent_history and recent_history[0]["role"] != "user":
+                recent_history = recent_history[1:]
             messages.extend(recent_history)
 
             start_time = time.time()
