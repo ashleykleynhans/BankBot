@@ -17,16 +17,20 @@
 
   let inputText = '';
   let messagesContainer;
+  let inputElement;
 
   onMount(() => {
     connect();
     return () => disconnect();
   });
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages, refocus input when ready
   afterUpdate(() => {
     if (messagesContainer) {
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+    if (inputElement && !inputElement.disabled) {
+      inputElement.focus();
     }
   });
 
@@ -145,6 +149,7 @@
     <div class="flex gap-3">
       <input
         type="text"
+        bind:this={inputElement}
         bind:value={inputText}
         on:keydown={handleKeyDown}
         placeholder={$isConnected ? 'Type your question...' : 'Connecting...'}
