@@ -487,3 +487,58 @@ class TestPriceDecrease:
         assert "DECREASED" in result
         assert "229" in result
         assert "199" in result
+
+
+class TestProperNounSearch:
+    """Test proper noun detection and phrase search in _find_relevant_transactions."""
+
+    def test_multi_word_proper_noun_finds_transactions(self, chat, mock_db):
+        """'List Chanel Smith payments' should search 'chanel smith' as a phrase."""
+        smith_txs = [
+            {"date": "2025-12-01", "description": "FNB App Payment To Chanel Smith",
+             "amount": -500.00, "category": "eft_payment", "transaction_type": "debit"},
+            {"date": "2025-11-15", "description": "Send Money App Dr Send Chanel Smith",
+             "amount": -200.00, "category": "ewallet", "transaction_type": "debit"},
+        ]
+        mock_db.search_transactions.return_value = smith_txs
+
+        _, transactions, _ = chat.ask("List Chanel Smith payments")
+
+        mock_db.search_transactions.assert_called_with("chanel smith")
+        assert len(transactions) == 2
+        assert transactions[0]["description"] == "FNB App Payment To Chanel Smith"
+
+    def test_multi_word_proper_noun_filters_fees(self, chat, mock_db):
+        """Proper noun phrase search should filter out fee transactions."""
+        results_with_fees = [
+            {"date": "2025-12-01", "description": "FNB App Payment To Chanel Smith",
+             "amount": -500.00, "category": "eft_payment", "transaction_type": "debit"},
+            {"date": "2025-12-02", "description": "#Service Fees Chanel Smith",
+             "amount": -5.00, "category": "fees", "transaction_type": "debit"},
+        ]
+        mock_db.search_transactions.return_value = results_with_fees
+
+        _, transactions, _ = chat.ask("List Chanel Smith payments")
+
+        assert len(transactions) == 1
+        assert transactions[0]["category"] == "eft_payment"
+
+
+class TestExtractSearchTermsSingleWord:
+    """Test _extract_search_terms returning a single LLM word found in the query."""
+
+    def test_llm_single_word_match(self, chat, mock_db):
+        """LLM returning a single word present in query should use that term."""
+        # Use lowercase query so no proper nouns are detected,
+        # forcing the code into _extract_search_terms → single word LLM path
+        chat._client.chat.completions.create.return_value = mock_openai_response("spotify")
+
+        mock_db.search_transactions.return_value = [
+            {"date": "2025-12-29", "description": "POS Purchase Spotifyza",
+             "amount": -119.99, "category": "subscriptions", "transaction_type": "debit"},
+        ]
+
+        _, transactions, _ = chat.ask("show me spotify payments")
+
+        mock_db.search_transactions.assert_called_with("spotify")
+        assert len(transactions) == 1
