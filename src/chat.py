@@ -576,6 +576,20 @@ Query: {query}"""
         if is_budget_query:
             budgets = self.db.get_all_budgets()
             latest_stmt = self.db.get_latest_statement()
+            budget_categories = {b["category"] for b in budgets}
+
+            # Check if the user asked about a specific category that has no budget
+            categories = self.db.get_all_categories()
+            asked_category = None
+            for category in categories:
+                if category and category.lower().replace("_", " ") in query_lower:
+                    asked_category = category
+                    break
+            if asked_category and asked_category not in budget_categories:
+                context_parts.append(
+                    f"\n>>> NO BUDGET SET for {asked_category}. "
+                    f"The user has NOT set a budget for this category. <<<"
+                )
 
             if budgets and latest_stmt:
                 stmt_num = latest_stmt.get("statement_number")
