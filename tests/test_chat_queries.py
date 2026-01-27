@@ -548,6 +548,30 @@ class TestExtractSearchTermsSingleWord:
         assert len(transactions) == 1
 
 
+class TestExtractSearchTermsLLMPaths:
+    """Test _extract_search_terms LLM response handling paths."""
+
+    def test_llm_multi_word_name_in_query(self, chat):
+        """LLM returning a multi-word name present in the query returns the full phrase."""
+        chat._client.chat.completions.create.return_value = mock_openai_response("chanel smith")
+        terms = chat._extract_search_terms("show chanel smith payments")
+        assert terms == ["chanel smith"]
+
+    def test_llm_skips_short_words(self, chat):
+        """LLM words shorter than 3 chars are skipped, falls back to simple extraction."""
+        chat._client.chat.completions.create.return_value = mock_openai_response("at")
+        terms = chat._extract_search_terms("show stuff at the shop")
+        # "at" (len 2) is skipped → falls back to simple terms
+        assert "stuff" in terms
+        assert "shop" in terms
+
+    def test_llm_single_word_in_query_returned(self, chat):
+        """LLM returning a word that appears in the query returns it."""
+        chat._client.chat.completions.create.return_value = mock_openai_response("woolworths")
+        terms = chat._extract_search_terms("show woolworths groceries")
+        assert terms == ["woolworths"]
+
+
 class TestBuildContextNoBudget:
     """Test _build_context detecting a category with no budget set."""
 
