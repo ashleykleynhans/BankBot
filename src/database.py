@@ -227,9 +227,8 @@ class Database:
                    JOIN statements s ON t.statement_id = s.id
                    WHERE t.description LIKE ?
                       OR t.recipient_or_payer LIKE ?
-                      OR t.raw_text LIKE ?
                    ORDER BY t.date DESC""",
-                (f"%{search_term}%", f"%{search_term}%", f"%{search_term}%")
+                (f"%{search_term}%", f"%{search_term}%")
             ).fetchall()
             return [dict(row) for row in rows]
 

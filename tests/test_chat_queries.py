@@ -272,14 +272,20 @@ class TestTypoCorrection:
         # LLM returns "Metaflix -> Netflix" format
         chat._client.chat.completions.create.return_value = mock_openai_response("Metaflix -> Netflix")
 
-        mock_db.search_transactions.return_value = [
+        netflix_result = [
             {"date": "2025-01-22", "description": "Netflix.com", "amount": -199.00,
              "category": "subscriptions", "transaction_type": "debit"},
+        ]
+        # First call is proper noun search for "metaflix" (no results),
+        # then LLM corrects to "netflix" which finds results
+        mock_db.search_transactions.side_effect = [
+            [],  # "metaflix" (proper noun detection)
+            netflix_result,  # "netflix" (LLM correction)
         ]
 
         response, transactions, _ = chat.ask("How much did I spent on Metaflix?")
 
-        # Should find Netflix transactions
+        # Should find Netflix transactions via LLM correction
         mock_db.search_transactions.assert_called_with("netflix")
         assert len(transactions) == 1
 

@@ -327,6 +327,32 @@ class ChatInterface:
             # Don't return all debits, too many - let search narrow it down
             pass
 
+        # Detect proper nouns (person/business names like "Chanel Smith")
+        # and search for the full name as a phrase first, before LLM extraction
+        common_starters = {
+            "show", "list", "find", "when", "what", "how", "did", "have", "where",
+            "who", "why", "is", "are", "can", "the", "a", "an", "i", "my", "hi",
+            "hello", "hey", "please", "could", "would", "tell", "give", "get",
+            "do", "does", "has", "was", "were", "all",
+        }
+        capitalized_words = re.findall(r'\b[A-Z][a-z]+\b', query)
+        proper_nouns = [w for w in capitalized_words if w.lower() not in common_starters]
+        if len(proper_nouns) >= 2:
+            # Search for the full proper noun phrase (e.g., "Chanel Smith")
+            full_name = " ".join(proper_nouns).lower()
+            results = self.db.search_transactions(full_name)
+            if results:
+                filtered = [tx for tx in results if tx.get("category") != "fees"]
+                if filtered:
+                    return limit_if_when_last(filtered)
+        elif len(proper_nouns) == 1:
+            # Single proper noun (e.g., "Netflix", "Spotify")
+            results = self.db.search_transactions(proper_nouns[0].lower())
+            if results:
+                filtered = [tx for tx in results if tx.get("category") != "fees"]
+                if filtered:
+                    return limit_if_when_last(filtered)
+
         # Extract potential search terms
         search_terms = self._extract_search_terms(query)
 
@@ -426,6 +452,14 @@ Query: {query}"""
                 # Validate: the LLM term must actually appear in the original query
                 # or be a very close typo correction (edit distance <= 2)
                 llm_words = re.findall(r'\b[a-z]+\b', terms_text)
+
+                # If LLM returned a multi-word name (e.g., "chanel smith"),
+                # check if the full phrase appears in the query first
+                if len(llm_words) >= 2:
+                    full_name = " ".join(w for w in llm_words if len(w) >= 3)
+                    if full_name and full_name in query_lower:
+                        return [full_name]
+
                 for llm_word in llm_words:
                     if len(llm_word) < 3:
                         continue
