@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import sqlite3
 from datetime import datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -52,7 +53,16 @@ async def websocket_chat(websocket: WebSocket) -> None:
 
     try:
         # Send connection acknowledgment with stats
-        stats = db.get_stats()
+        try:
+            stats = db.get_stats()
+        except sqlite3.OperationalError:
+            stats = {
+                "total_statements": 0,
+                "total_transactions": 0,
+                "total_debits": 0,
+                "total_credits": 0,
+                "categories_count": 0,
+            }
         await websocket.send_json(
             {
                 "type": "connected",

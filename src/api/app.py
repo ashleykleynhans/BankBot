@@ -1,11 +1,13 @@
 """FastAPI application for statement-chat API."""
 
 import asyncio
+import sqlite3
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from ..config import get_config
 from ..database import Database
@@ -65,6 +67,20 @@ def create_app() -> FastAPI:
     app.include_router(transactions.router, prefix="/api/v1", tags=["transactions"])
     app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
     app.include_router(budgets.router, prefix="/api/v1", tags=["budgets"])
+
+    @app.exception_handler(sqlite3.OperationalError)
+    async def sqlite_error_handler(request: Request, exc: sqlite3.OperationalError) -> JSONResponse:
+        """Handle missing tables gracefully with import instructions."""
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "No bank statements imported yet.",
+                "instructions": (
+                    "Place your bank statement PDFs in the statements/ directory, "
+                    "then run: bankbot import"
+                ),
+            },
+        )
 
     @app.get("/health", tags=["health"])
     async def health_check() -> dict:

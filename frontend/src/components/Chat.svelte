@@ -12,6 +12,7 @@
     connectionState,
     ConnectionState,
     error,
+    stats,
   } from '../lib/websocket.js';
   import ChatMessage from './ChatMessage.svelte';
 
@@ -99,16 +100,35 @@
   >
     {#if $messages.length === 0}
       <div class="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
-        <svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="1.5"
-            d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-          />
-        </svg>
-        <p class="text-lg font-medium">Ask me about your transactions</p>
-        <p class="text-sm mt-1">Try "How much did I spend on groceries last month?"</p>
+        {#if $stats && $stats.total_statements === 0}
+          <svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.5"
+              d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+            />
+          </svg>
+          <p class="text-lg font-medium">No bank statements imported</p>
+          <div class="mt-3 text-sm text-left bg-gray-100 dark:bg-gray-800 rounded-lg p-4 max-w-md">
+            <p class="mb-2">To get started:</p>
+            <ol class="list-decimal list-inside space-y-1">
+              <li>Place your bank statement PDFs in the <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">statements/</code> directory</li>
+              <li>Run <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">bankbot import</code></li>
+            </ol>
+          </div>
+        {:else}
+          <svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.5"
+              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+            />
+          </svg>
+          <p class="text-lg font-medium">Ask me about your transactions</p>
+          <p class="text-sm mt-1">Try "How much did I spend on groceries last month?"</p>
+        {/if}
       </div>
     {:else}
       {#each $messages as message}

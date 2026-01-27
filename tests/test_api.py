@@ -1,5 +1,7 @@
 """Tests for API module."""
 
+import sqlite3
+
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from fastapi.testclient import TestClient
@@ -120,6 +122,21 @@ class TestStatsEndpoints:
         assert len(data["categories"]) == 2
         assert data["categories"][0]["category"] == "groceries"
         assert data["categories"][0]["count"] == 20
+
+
+class TestMissingDatabase:
+    """Tests for graceful handling when database tables are missing."""
+
+    def test_rest_endpoint_missing_tables(self, client, mock_db):
+        """REST endpoints return 503 with import instructions when tables are missing."""
+        mock_db.get_stats.side_effect = sqlite3.OperationalError("no such table: statements")
+
+        response = client.get("/api/v1/stats")
+
+        assert response.status_code == 503
+        data = response.json()
+        assert "No bank statements imported" in data["error"]
+        assert "bankbot import" in data["instructions"]
 
 
 class TestTransactionEndpoints:
@@ -427,6 +444,26 @@ class TestWebSocketChat:
                 assert data["type"] == "connected"
                 assert data["payload"]["session_id"] == "test-session-id"
                 assert "stats" in data["payload"]
+
+    def test_websocket_connect_missing_tables(self, client, mock_db, mock_config):
+        """Test WebSocket connection when DB tables don't exist."""
+        mock_db.get_stats.side_effect = sqlite3.OperationalError("no such table: statements")
+
+        with patch('src.api.routers.chat.session_manager') as mock_manager:
+            mock_session = Mock()
+            mock_session.session_id = "test-session-id"
+            mock_manager.create_session.return_value = mock_session
+
+            with client.websocket_connect("/ws/chat") as websocket:
+                data = websocket.receive_json()
+
+                assert data["type"] == "connected"
+                stats = data["payload"]["stats"]
+                assert stats["total_statements"] == 0
+                assert stats["total_transactions"] == 0
+                assert stats["total_debits"] == 0
+                assert stats["total_credits"] == 0
+                assert stats["categories_count"] == 0
 
     def test_websocket_ping_pong(self, client, mock_db, mock_config):
         """Test ping/pong messages."""
