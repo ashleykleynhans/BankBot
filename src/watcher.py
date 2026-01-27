@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, MofNCompleteColumn, TimeElapsedColumn
 from watchdog.events import FileSystemEventHandler, FileCreatedEvent
 from watchdog.observers import Observer
 
@@ -72,24 +73,36 @@ class StatementHandler(FileSystemEventHandler):
 
             # Process and classify transactions
             transactions_to_insert = []
-            for tx in statement_data.transactions:
-                # Determine transaction type
-                tx_type = "credit" if tx.amount > 0 else "debit"
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TimeElapsedColumn(),
+                console=self.console,
+            ) as progress:
+                task = progress.add_task(
+                    "Classifying transactions", total=len(statement_data.transactions)
+                )
+                for tx in statement_data.transactions:
+                    # Determine transaction type
+                    tx_type = "credit" if tx.amount > 0 else "debit"
 
-                # Classify with LLM
-                classification = self.classifier.classify(tx.description, tx.amount)
+                    # Classify with LLM
+                    classification = self.classifier.classify(tx.description, tx.amount)
 
-                transactions_to_insert.append({
-                    "date": tx.date,
-                    "description": tx.description,
-                    "amount": abs(tx.amount),
-                    "balance": tx.balance,
-                    "transaction_type": tx_type,
-                    "category": classification.category,
-                    "recipient_or_payer": classification.recipient_or_payer,
-                    "reference": tx.reference,
-                    "raw_text": tx.raw_text
-                })
+                    transactions_to_insert.append({
+                        "date": tx.date,
+                        "description": tx.description,
+                        "amount": abs(tx.amount),
+                        "balance": tx.balance,
+                        "transaction_type": tx_type,
+                        "category": classification.category,
+                        "recipient_or_payer": classification.recipient_or_payer,
+                        "reference": tx.reference,
+                        "raw_text": tx.raw_text
+                    })
+                    progress.advance(task)
 
             # Batch insert
             self.db.insert_transactions_batch(statement_id, transactions_to_insert)
@@ -215,21 +228,33 @@ def import_existing(
             )
 
             transactions_to_insert = []
-            for tx in statement_data.transactions:
-                tx_type = "credit" if tx.amount > 0 else "debit"
-                classification = classifier.classify(tx.description, tx.amount)
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TimeElapsedColumn(),
+                console=console,
+            ) as progress:
+                task = progress.add_task(
+                    "Classifying transactions", total=len(statement_data.transactions)
+                )
+                for tx in statement_data.transactions:
+                    tx_type = "credit" if tx.amount > 0 else "debit"
+                    classification = classifier.classify(tx.description, tx.amount)
 
-                transactions_to_insert.append({
-                    "date": tx.date,
-                    "description": tx.description,
-                    "amount": abs(tx.amount),
-                    "balance": tx.balance,
-                    "transaction_type": tx_type,
-                    "category": classification.category,
-                    "recipient_or_payer": classification.recipient_or_payer,
-                    "reference": tx.reference,
-                    "raw_text": tx.raw_text
-                })
+                    transactions_to_insert.append({
+                        "date": tx.date,
+                        "description": tx.description,
+                        "amount": abs(tx.amount),
+                        "balance": tx.balance,
+                        "transaction_type": tx_type,
+                        "category": classification.category,
+                        "recipient_or_payer": classification.recipient_or_payer,
+                        "reference": tx.reference,
+                        "raw_text": tx.raw_text
+                    })
+                    progress.advance(task)
 
             db.insert_transactions_batch(statement_id, transactions_to_insert)
 
@@ -283,21 +308,33 @@ def reimport_statement(
         )
 
         transactions_to_insert = []
-        for tx in statement_data.transactions:
-            tx_type = "credit" if tx.amount > 0 else "debit"
-            classification = classifier.classify(tx.description, tx.amount)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "Classifying transactions", total=len(statement_data.transactions)
+            )
+            for tx in statement_data.transactions:
+                tx_type = "credit" if tx.amount > 0 else "debit"
+                classification = classifier.classify(tx.description, tx.amount)
 
-            transactions_to_insert.append({
-                "date": tx.date,
-                "description": tx.description,
-                "amount": abs(tx.amount),
-                "balance": tx.balance,
-                "transaction_type": tx_type,
-                "category": classification.category,
-                "recipient_or_payer": classification.recipient_or_payer,
-                "reference": tx.reference,
-                "raw_text": tx.raw_text
-            })
+                transactions_to_insert.append({
+                    "date": tx.date,
+                    "description": tx.description,
+                    "amount": abs(tx.amount),
+                    "balance": tx.balance,
+                    "transaction_type": tx_type,
+                    "category": classification.category,
+                    "recipient_or_payer": classification.recipient_or_payer,
+                    "reference": tx.reference,
+                    "raw_text": tx.raw_text
+                })
+                progress.advance(task)
 
         db.insert_transactions_batch(statement_id, transactions_to_insert)
 
