@@ -108,7 +108,11 @@
       }
     );
 
-    // Color "remaining" amounts in green
+    // Color "remaining" amounts in green (handle optional **bold** markdown)
+    formatted = formatted.replace(
+      /\*\*(R[\d,\.]+)\*\*\s+remaining/g,
+      '<span class="text-green-500 font-semibold">$1 remaining</span>'
+    );
     formatted = formatted.replace(
       /(R[\d,\.]+)\s+remaining/g,
       '<span class="text-green-500">$1 remaining</span>'
