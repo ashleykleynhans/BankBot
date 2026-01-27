@@ -542,3 +542,116 @@ class TestExtractSearchTermsSingleWord:
 
         mock_db.search_transactions.assert_called_with("spotify")
         assert len(transactions) == 1
+
+
+class TestBuildContextNoBudget:
+    """Test _build_context detecting a category with no budget set."""
+
+    def test_no_budget_set_for_category_adds_context(self, chat, mock_db):
+        """Budget query for a category without a budget should add NO BUDGET SET context."""
+        mock_db.get_all_budgets.return_value = [
+            {"category": "medical", "amount": 8000.00},
+        ]
+        mock_db.get_latest_statement.return_value = {"statement_number": 288, "statement_date": "2025-12-31"}
+        mock_db.get_category_summary_for_statement.return_value = [
+            {"category": "medical", "total_debits": -7000.00},
+        ]
+
+        context = chat._build_context([], "What's my groceries budget?")
+
+        assert "NO BUDGET SET for groceries" in context
+
+
+class TestHistoryAlternation:
+    """Test conversation history alternation fix."""
+
+    def test_history_strips_leading_assistant_message(self, chat, mock_db):
+        """When [-10:] slice starts with assistant, it should be stripped."""
+        # Fill history with 5 complete exchanges (10 entries).
+        # _get_llm_response appends 1 user message internally → 11 total.
+        # [-10:] on 11 entries starts at index 1 (assistant0), triggering the fix.
+        for i in range(5):
+            chat._conversation_history.append({"role": "user", "content": f"Q{i}"})
+            chat._conversation_history.append({"role": "assistant", "content": f"A{i}"})
+
+        response = chat._get_llm_response("test", "test context")
+
+        # Verify LLM was called with properly alternating messages
+        call_args = chat._client.chat.completions.create.call_args
+        messages = call_args[1]["messages"] if "messages" in call_args[1] else call_args[0][0]
+        # First message is system, second must be user (not assistant)
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+
+
+class TestDeterministicBudgetResponses:
+    """Test deterministic budget responses in ask()."""
+
+    def test_specific_category_over_budget(self, chat, mock_db):
+        """Specific category budget query when over budget."""
+        mock_db.get_all_budgets.return_value = [
+            {"category": "medical", "amount": 8000.00},
+        ]
+        mock_db.get_category_summary_for_statement.return_value = [
+            {"category": "medical", "total_debits": -8615.00},
+        ]
+        mock_db.get_transactions_by_statement.return_value = [
+            {"date": "2025-12-15", "description": "Doctor visit", "amount": -1500.00,
+             "category": "medical", "transaction_type": "debit"},
+        ]
+
+        response, transactions, stats = chat.ask("What's my medical budget?")
+
+        assert "OVER BUDGET" in response
+        assert "R8,000.00" in response
+        assert "R8,615.00" in response
+        assert stats is None  # Deterministic, no LLM
+        assert len(transactions) == 1
+
+    def test_specific_category_no_latest_statement(self, chat, mock_db):
+        """Specific category budget without a latest statement falls back to get_transactions_by_category."""
+        mock_db.get_all_budgets.return_value = [
+            {"category": "groceries", "amount": 5000.00},
+        ]
+        mock_db.get_latest_statement.return_value = None
+        mock_db.get_transactions_by_category.return_value = [
+            {"date": "2025-12-01", "description": "Woolworths", "amount": -800.00,
+             "category": "groceries", "transaction_type": "debit"},
+        ]
+
+        response, transactions, stats = chat.ask("What's my groceries budget?")
+
+        mock_db.get_transactions_by_category.assert_called_with("groceries")
+        assert "R5,000.00" in response
+        assert len(transactions) == 1
+        assert stats is None
+
+    def test_specific_category_no_budget_set(self, chat, mock_db):
+        """Asking about a category that exists but has no budget."""
+        mock_db.get_all_budgets.return_value = [
+            {"category": "medical", "amount": 8000.00},
+        ]
+
+        response, transactions, stats = chat.ask("What's my groceries budget?")
+
+        assert "haven't set a budget for groceries" in response
+        assert transactions == []
+        assert stats is None
+
+    def test_overall_budget_over_budget(self, chat, mock_db):
+        """Overall budget query when total spending exceeds total budget."""
+        mock_db.get_all_budgets.return_value = [
+            {"category": "groceries", "amount": 3000.00},
+            {"category": "medical", "amount": 5000.00},
+        ]
+        mock_db.get_category_summary_for_statement.return_value = [
+            {"category": "groceries", "total_debits": -4000.00},
+            {"category": "medical", "total_debits": -6000.00},
+        ]
+
+        response, transactions, stats = chat.ask("How much budget remaining?")
+
+        assert "OVER BUDGET" in response
+        assert "R8,000.00" in response  # total budgeted
+        assert "R10,000.00" in response  # total spent
+        assert stats is None

@@ -979,6 +979,87 @@ Answer concisely and directly."""
                 response = f"Your {merchant} price has stayed the same."
                 return response, relevant_transactions, None
 
+        # For budget queries, bypass LLM and return deterministic response
+        is_budget_query = "budget" in query_lower
+        if is_budget_query:
+            budgets = self.db.get_all_budgets()
+            if budgets:
+                latest_stmt = self.db.get_latest_statement()
+                stmt_num = latest_stmt.get("statement_number") if latest_stmt else None
+
+                # Build actual-spend lookup from latest statement
+                actual_by_cat = {}
+                if stmt_num:
+                    category_summary = self.db.get_category_summary_for_statement(stmt_num)
+                    actual_by_cat = {s["category"]: abs(s.get("total_debits", 0) or 0) for s in category_summary}
+
+                budget_map = {b["category"]: b["amount"] for b in budgets}
+
+                # Check if asking about a specific category
+                categories = self.db.get_all_categories()
+                asked_category = None
+                for category in categories:
+                    if category and category.lower().replace("_", " ") in query_lower:
+                        asked_category = category
+                        break
+
+                if asked_category:
+                    # Specific category budget
+                    if asked_category in budget_map:
+                        budget_amt = budget_map[asked_category]
+                        actual = actual_by_cat.get(asked_category, 0)
+                        remaining = budget_amt - actual
+                        pct = (actual / budget_amt * 100) if budget_amt > 0 else 0
+                        # Get transactions for this category from latest statement
+                        if stmt_num:
+                            txns = [
+                                t for t in self.db.get_transactions_by_statement(stmt_num)
+                                if t.get("category") == asked_category
+                                and t.get("transaction_type") == "debit"
+                            ]
+                        else:
+                            txns = self.db.get_transactions_by_category(asked_category)
+                        if pct > 100:
+                            response = (
+                                f"Your **{asked_category}** budget is **R{budget_amt:,.2f}**. "
+                                f"You've spent **R{actual:,.2f}** ({pct:.0f}% used), "
+                                f"putting you **OVER BUDGET** by **R{abs(remaining):,.2f}**."
+                            )
+                        else:
+                            response = (
+                                f"Your **{asked_category}** budget is **R{budget_amt:,.2f}**. "
+                                f"You've spent **R{actual:,.2f}** ({pct:.0f}% used), "
+                                f"with **R{remaining:,.2f}** remaining."
+                            )
+                        return response, txns, None
+                    else:
+                        response = (
+                            f"You haven't set a budget for {asked_category} yet. "
+                            f"Say 'Set my {asked_category} budget to R5000' to create one."
+                        )
+                        return response, [], None
+                else:
+                    # Overall budget
+                    total_budgeted = sum(b["amount"] for b in budgets)
+                    total_spent = sum(actual_by_cat.get(b["category"], 0) for b in budgets)
+                    total_remaining = total_budgeted - total_spent
+                    pct = (total_spent / total_budgeted * 100) if total_budgeted > 0 else 0
+                    if pct > 100:
+                        response = (
+                            f"Your overall budget is **R{total_budgeted:,.2f}**. "
+                            f"You've spent **R{total_spent:,.2f}** ({pct:.0f}% used), "
+                            f"putting you **OVER BUDGET** by **R{abs(total_remaining):,.2f}**."
+                        )
+                    else:
+                        response = (
+                            f"Your overall budget is **R{total_budgeted:,.2f}**. "
+                            f"You've spent **R{total_spent:,.2f}** ({pct:.0f}% used), "
+                            f"with **R{total_remaining:,.2f}** remaining."
+                        )
+                    return response, [], None
+            else:
+                return "You haven't set any budgets yet. Say 'Set my groceries budget to R5000' to create one.", [], None
+
         context = self._build_context(relevant_transactions, query)
         response = self._get_llm_response(query, context)
         return response, relevant_transactions, self._last_llm_stats
