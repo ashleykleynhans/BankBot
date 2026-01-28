@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from ..config import get_config
 from ..database import Database
+from ..llm_backend import create_backend
 from .routers import analytics, budgets, chat, stats, transactions
 from .session import session_manager
 
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     config = get_config()
     app.state.config = config
     app.state.db = Database(config["paths"]["database"])
+    app.state.backend = create_backend(config)
 
     # Start background task for session cleanup
     cleanup_task = asyncio.create_task(periodic_cleanup())

@@ -1,25 +1,32 @@
 """Tests for classifier module."""
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, MagicMock
 
 from src.classifier import TransactionClassifier, ClassificationResult
+from src.llm_backend import LLMBackend, LLMResponse
 
 
 @pytest.fixture
-def classifier():
+def mock_backend():
+    """Create a mock LLM backend."""
+    return Mock(spec=LLMBackend)
+
+
+@pytest.fixture
+def classifier(mock_backend):
     """Create a classifier with test categories."""
-    with patch('src.classifier.OpenAI'):
-        return TransactionClassifier(
-            categories=["groceries", "fuel", "medical", "salary", "subscriptions", "other"],
-            classification_rules={
-                "Woolworths": "groceries",
-                "Shell": "fuel",
-                "Dr ": "medical",
-                "Salary": "salary",
-                "Google One": "subscriptions",  # Multi-word pattern
-            }
-        )
+    return TransactionClassifier(
+        backend=mock_backend,
+        categories=["groceries", "fuel", "medical", "salary", "subscriptions", "other"],
+        classification_rules={
+            "Woolworths": "groceries",
+            "Shell": "fuel",
+            "Dr ": "medical",
+            "Salary": "salary",
+            "Google One": "subscriptions",  # Multi-word pattern
+        }
+    )
 
 
 class TestRulesBasedClassification:
@@ -90,22 +97,20 @@ class TestRulesBasedClassification:
 class TestLLMClassification:
     """Tests for LLM-based classification."""
 
-    def test_classify_falls_back_to_llm(self, classifier):
+    def test_classify_falls_back_to_llm(self, classifier, mock_backend):
         """Test classification falls back to LLM when no rule matches."""
-        mock_response = Mock()
-        mock_response.choices = [Mock(message=Mock(
+        mock_backend.chat_completion.return_value = LLMResponse(
             content='{"category": "other", "recipient_or_payer": "Test", "confidence": "medium"}'
-        ))]
-        classifier._client.chat.completions.create.return_value = mock_response
+        )
 
         result = classifier.classify("Random Transaction", -100)
 
         assert result.category == "other"
-        classifier._client.chat.completions.create.assert_called_once()
+        mock_backend.chat_completion.assert_called_once()
 
-    def test_classify_handles_llm_error(self, classifier):
+    def test_classify_handles_llm_error(self, classifier, mock_backend):
         """Test classification handles LLM errors gracefully."""
-        classifier._client.chat.completions.create.side_effect = Exception("Connection error")
+        mock_backend.chat_completion.side_effect = Exception("Connection error")
 
         result = classifier.classify("Random Transaction", -100)
 
@@ -206,13 +211,11 @@ class TestBatchLLMClassification:
         results = classifier.classify_batch_llm([])
         assert results == []
 
-    def test_batch_llm_success(self, classifier):
+    def test_batch_llm_success(self, classifier, mock_backend):
         """Test batch LLM classifies multiple transactions in one call."""
-        mock_response = Mock()
-        mock_response.choices = [Mock(message=Mock(
+        mock_backend.chat_completion.return_value = LLMResponse(
             content='[{"category": "groceries", "recipient_or_payer": "Shop"}, {"category": "fuel", "recipient_or_payer": null}]'
-        ))]
-        classifier._client.chat.completions.create.return_value = mock_response
+        )
 
         transactions = [
             {"description": "Some shop", "amount": -500},
@@ -226,11 +229,11 @@ class TestBatchLLMClassification:
         assert results[1].category == "fuel"
         assert results[1].recipient_or_payer is None
         # Should be a single LLM call for the batch
-        assert classifier._client.chat.completions.create.call_count == 1
+        assert mock_backend.chat_completion.call_count == 1
 
-    def test_batch_llm_handles_error(self, classifier):
+    def test_batch_llm_handles_error(self, classifier, mock_backend):
         """Test batch LLM returns defaults on error."""
-        classifier._client.chat.completions.create.side_effect = Exception("Connection error")
+        mock_backend.chat_completion.side_effect = Exception("Connection error")
 
         transactions = [
             {"description": "Shop", "amount": -500},
@@ -242,21 +245,18 @@ class TestBatchLLMClassification:
         assert all(r.category == "other" for r in results)
         assert all(r.confidence == "low" for r in results)
 
-    def test_batch_llm_splits_large_batches(self, classifier):
+    def test_batch_llm_splits_large_batches(self, classifier, mock_backend):
         """Test large lists are split into multiple LLM calls."""
-        mock_response = Mock()
-        # Return valid response for each batch
-        mock_response.choices = [Mock(message=Mock(
+        mock_backend.chat_completion.return_value = LLMResponse(
             content='[' + ','.join(['{"category": "other", "recipient_or_payer": null}'] * 15) + ']'
-        ))]
-        classifier._client.chat.completions.create.return_value = mock_response
+        )
 
         transactions = [{"description": f"Tx {i}", "amount": -100} for i in range(20)]
         results = classifier.classify_batch_llm(transactions, batch_size=15)
 
         assert len(results) == 20
         # Should be 2 LLM calls: 15 + 5
-        assert classifier._client.chat.completions.create.call_count == 2
+        assert mock_backend.chat_completion.call_count == 2
 
 
 class TestBatchResponseParsing:
@@ -329,46 +329,27 @@ class TestBatchResponseParsing:
 class TestConnectionCheck:
     """Tests for connection checking."""
 
-    def test_check_connection_success(self, classifier):
+    def test_check_connection_success(self, classifier, mock_backend):
         """Test successful connection check."""
-        mock_model = MagicMock()
-        mock_model.id = "llama3.2"
-        classifier._client.models.list.return_value = MagicMock(data=[mock_model])
-
+        mock_backend.check_connection.return_value = True
         assert classifier.check_connection() is True
 
-    def test_check_connection_model_not_found(self, classifier):
-        """Test connection check when model not found but server available."""
-        mock_model = MagicMock()
-        mock_model.id = "other_model"
-        classifier._client.models.list.return_value = MagicMock(data=[mock_model])
-
-        # Should still return True if any model is available
-        assert classifier.check_connection() is True
-
-    def test_check_connection_error(self, classifier):
+    def test_check_connection_error(self, classifier, mock_backend):
         """Test connection check handles errors."""
-        classifier._client.models.list.side_effect = Exception("Connection refused")
-
+        mock_backend.check_connection.return_value = False
         assert classifier.check_connection() is False
 
-    def test_get_available_models(self, classifier):
+    def test_get_available_models(self, classifier, mock_backend):
         """Test getting available models."""
-        mock_model1 = MagicMock()
-        mock_model1.id = "llama3.2"
-        mock_model2 = MagicMock()
-        mock_model2.id = "mistral"
-        classifier._client.models.list.return_value = MagicMock(data=[mock_model1, mock_model2])
-
+        mock_backend.get_available_models.return_value = ["llama3.2", "mistral"]
         models = classifier.get_available_models()
 
         assert "llama3.2" in models
         assert "mistral" in models
 
-    def test_get_available_models_error(self, classifier):
+    def test_get_available_models_error(self, classifier, mock_backend):
         """Test getting models handles errors."""
-        classifier._client.models.list.side_effect = Exception("Connection refused")
-
+        mock_backend.get_available_models.return_value = []
         models = classifier.get_available_models()
 
         assert models == []

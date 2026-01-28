@@ -51,10 +51,11 @@ def mock_args():
 class TestCmdImport:
     """Tests for cmd_import function."""
 
+    @patch('src.main.create_backend')
     @patch('src.main.import_existing')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_import_success(self, mock_db, mock_classifier, mock_import, mock_config, mock_args):
+    def test_import_success(self, mock_db, mock_classifier, mock_import, mock_create_backend, mock_config, mock_args):
         """Test successful import."""
         mock_classifier.return_value.check_connection.return_value = True
         mock_import.return_value = 5
@@ -63,9 +64,10 @@ class TestCmdImport:
 
         mock_import.assert_called_once()
 
+    @patch('src.main.create_backend')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_import_no_connection(self, mock_db, mock_classifier, mock_config, mock_args):
+    def test_import_no_connection(self, mock_db, mock_classifier, mock_create_backend, mock_config, mock_args):
         """Test import fails when Ollama not connected."""
         mock_classifier.return_value.check_connection.return_value = False
         mock_classifier.return_value.get_available_models.return_value = []
@@ -75,10 +77,11 @@ class TestCmdImport:
 
         assert exc.value.code == 1
 
+    @patch('src.main.create_backend')
     @patch('src.main.import_existing')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_import_with_path_override(self, mock_db, mock_classifier, mock_import, mock_config):
+    def test_import_with_path_override(self, mock_db, mock_classifier, mock_import, mock_create_backend, mock_config):
         """Test import with --path override."""
         mock_classifier.return_value.check_connection.return_value = True
         mock_import.return_value = 3
@@ -91,10 +94,11 @@ class TestCmdImport:
         assert call_kwargs["statements_dir"] == "/custom/path"
         assert call_kwargs["bank"] == "fnb"  # Falls back to config
 
+    @patch('src.main.create_backend')
     @patch('src.main.import_existing')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_import_with_bank_override(self, mock_db, mock_classifier, mock_import, mock_config):
+    def test_import_with_bank_override(self, mock_db, mock_classifier, mock_import, mock_create_backend, mock_config):
         """Test import with --bank override."""
         mock_classifier.return_value.check_connection.return_value = True
         mock_import.return_value = 2
@@ -110,10 +114,11 @@ class TestCmdImport:
 class TestCmdWatch:
     """Tests for cmd_watch function."""
 
+    @patch('src.main.create_backend')
     @patch('src.main.StatementWatcher')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_watch_success(self, mock_db, mock_classifier, mock_watcher, mock_config, mock_args):
+    def test_watch_success(self, mock_db, mock_classifier, mock_watcher, mock_create_backend, mock_config, mock_args):
         """Test successful watch start."""
         mock_classifier.return_value.check_connection.return_value = True
 
@@ -121,9 +126,10 @@ class TestCmdWatch:
 
         mock_watcher.return_value.start.assert_called_once()
 
+    @patch('src.main.create_backend')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_watch_no_connection(self, mock_db, mock_classifier, mock_config, mock_args):
+    def test_watch_no_connection(self, mock_db, mock_classifier, mock_create_backend, mock_config, mock_args):
         """Test watch fails when Ollama not connected."""
         mock_classifier.return_value.check_connection.return_value = False
 
@@ -136,9 +142,10 @@ class TestCmdWatch:
 class TestCmdChat:
     """Tests for cmd_chat function."""
 
+    @patch('src.main.create_backend')
     @patch('src.main.ChatInterface')
     @patch('src.main.Database')
-    def test_chat_success(self, mock_db, mock_chat, mock_config, mock_args):
+    def test_chat_success(self, mock_db, mock_chat, mock_create_backend, mock_config, mock_args):
         """Test successful chat start."""
         mock_db.return_value.get_stats.return_value = {"total_transactions": 10}
 
@@ -664,10 +671,11 @@ class TestCmdRename:
 class TestCmdReimport:
     """Tests for cmd_reimport function."""
 
+    @patch('src.main.create_backend')
     @patch('src.main.reimport_statement')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_reimport_success(self, mock_db, mock_classifier, mock_reimport, mock_config, tmp_path):
+    def test_reimport_success(self, mock_db, mock_classifier, mock_reimport, mock_create_backend, mock_config, tmp_path):
         """Test successful reimport."""
         mock_classifier.return_value.check_connection.return_value = True
         mock_reimport.return_value = True
@@ -680,9 +688,10 @@ class TestCmdReimport:
 
         mock_reimport.assert_called_once()
 
+    @patch('src.main.create_backend')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_reimport_file_not_found(self, mock_db, mock_classifier, mock_config, tmp_path):
+    def test_reimport_file_not_found(self, mock_db, mock_classifier, mock_create_backend, mock_config, tmp_path):
         """Test reimport with non-existent file."""
         mock_classifier.return_value.check_connection.return_value = True
         args = argparse.Namespace(file=str(tmp_path / "nonexistent.pdf"), bank=None, all=False)
@@ -692,9 +701,10 @@ class TestCmdReimport:
 
         assert exc.value.code == 1
 
+    @patch('src.main.create_backend')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_reimport_no_llm_connection(self, mock_db, mock_classifier, mock_config, tmp_path):
+    def test_reimport_no_llm_connection(self, mock_db, mock_classifier, mock_create_backend, mock_config, tmp_path):
         """Test reimport fails when Ollama not connected."""
         mock_classifier.return_value.check_connection.return_value = False
 
@@ -708,10 +718,11 @@ class TestCmdReimport:
 
         assert exc.value.code == 1
 
+    @patch('src.main.create_backend')
     @patch('src.main.reimport_statement')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_reimport_with_bank_override(self, mock_db, mock_classifier, mock_reimport, mock_config, tmp_path):
+    def test_reimport_with_bank_override(self, mock_db, mock_classifier, mock_reimport, mock_create_backend, mock_config, tmp_path):
         """Test reimport with --bank override."""
         mock_classifier.return_value.check_connection.return_value = True
         mock_reimport.return_value = True
@@ -725,10 +736,11 @@ class TestCmdReimport:
         call_kwargs = mock_reimport.call_args.kwargs
         assert call_kwargs["bank"] == "standardbank"
 
+    @patch('src.main.create_backend')
     @patch('src.main.reimport_statement')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_reimport_failure(self, mock_db, mock_classifier, mock_reimport, mock_config, tmp_path):
+    def test_reimport_failure(self, mock_db, mock_classifier, mock_reimport, mock_create_backend, mock_config, tmp_path):
         """Test reimport exits with error when reimport fails."""
         mock_classifier.return_value.check_connection.return_value = True
         mock_reimport.return_value = False
@@ -743,10 +755,11 @@ class TestCmdReimport:
 
         assert exc.value.code == 1
 
+    @patch('src.main.create_backend')
     @patch('src.main.reimport_statement')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_reimport_all(self, mock_db, mock_classifier, mock_reimport, mock_config, tmp_path):
+    def test_reimport_all(self, mock_db, mock_classifier, mock_reimport, mock_create_backend, mock_config, tmp_path):
         """Test reimport --all imports all PDF files."""
         mock_classifier.return_value.check_connection.return_value = True
         mock_reimport.return_value = True
@@ -766,10 +779,11 @@ class TestCmdReimport:
         # Should have called reimport_statement 3 times
         assert mock_reimport.call_count == 3
 
+    @patch('src.main.create_backend')
     @patch('src.main.reimport_statement')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_reimport_all_positional(self, mock_db, mock_classifier, mock_reimport, mock_config, tmp_path):
+    def test_reimport_all_positional(self, mock_db, mock_classifier, mock_reimport, mock_create_backend, mock_config, tmp_path):
         """Test reimport with 'all' as positional argument."""
         mock_classifier.return_value.check_connection.return_value = True
         mock_reimport.return_value = True
@@ -785,9 +799,10 @@ class TestCmdReimport:
 
         mock_reimport.assert_called_once()
 
+    @patch('src.main.create_backend')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_reimport_all_empty_directory(self, mock_db, mock_classifier, mock_config, tmp_path):
+    def test_reimport_all_empty_directory(self, mock_db, mock_classifier, mock_create_backend, mock_config, tmp_path):
         """Test reimport --all with no PDF files in directory."""
         mock_classifier.return_value.check_connection.return_value = True
 
@@ -798,10 +813,11 @@ class TestCmdReimport:
         args = argparse.Namespace(file=None, bank=None, all=True)
         cmd_reimport(args, config)  # Should return without error
 
+    @patch('src.main.create_backend')
     @patch('src.main.reimport_statement')
     @patch('src.main.TransactionClassifier')
     @patch('src.main.Database')
-    def test_reimport_all_with_failures(self, mock_db, mock_classifier, mock_reimport, mock_config, tmp_path):
+    def test_reimport_all_with_failures(self, mock_db, mock_classifier, mock_reimport, mock_create_backend, mock_config, tmp_path):
         """Test reimport --all handles failed reimports."""
         mock_classifier.return_value.check_connection.return_value = True
         # First succeeds, second fails
@@ -819,9 +835,7 @@ class TestCmdReimport:
 
         assert mock_reimport.call_count == 2
 
-    @patch('src.main.TransactionClassifier')
-    @patch('src.main.Database')
-    def test_reimport_no_file_no_all(self, mock_db, mock_classifier, mock_config):
+    def test_reimport_no_file_no_all(self, mock_config):
         """Test reimport exits with error when no file and no --all."""
         args = argparse.Namespace(file=None, bank=None, all=False)
 

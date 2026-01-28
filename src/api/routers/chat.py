@@ -35,15 +35,13 @@ async def websocket_chat(websocket: WebSocket) -> None:
 
     # Get shared resources from app state
     app = websocket.app
-    config = app.state.config
     db = app.state.db
+    backend = app.state.backend
 
     # Create session for this connection
     session = session_manager.create_session(
         db=db,
-        host=config["llm"]["host"],
-        port=config["llm"]["port"],
-        model=config["llm"]["model"],
+        backend=backend,
     )
 
     # Track a cancelled-but-still-running LLM task so we can clean up

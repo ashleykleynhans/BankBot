@@ -1,10 +1,10 @@
-"""Transaction classifier using OpenAI-compatible LLM API."""
+"""Transaction classifier using LLM backend for classification."""
 
 import json
 import re
 from dataclasses import dataclass
 
-from openai import OpenAI
+from .llm_backend import LLMBackend
 
 
 @dataclass
@@ -20,15 +20,11 @@ class TransactionClassifier:
 
     def __init__(
         self,
-        host: str = "localhost",
-        port: int = 11434,
-        model: str = "llama3.2",
+        backend: LLMBackend,
         categories: list[str] | None = None,
         classification_rules: dict[str, str] | None = None
     ):
-        self.host = host
-        self.port = port
-        self.model = model
+        self._backend = backend
         self.categories = categories or [
             "doctor", "optician", "groceries", "garden_service",
             "dog_parlour", "domestic_worker", "education", "fuel",
@@ -37,11 +33,6 @@ class TransactionClassifier:
             "deposit", "savings", "eft_payment", "other"
         ]
         self.classification_rules = classification_rules or {}
-        self._client = OpenAI(
-            base_url=f"http://{host}:{port}/v1",
-            api_key="lm-studio",
-            timeout=30.0,
-        )
 
     def _check_rules(self, description: str) -> str | None:
         """Check if description matches any classification rules.
@@ -116,14 +107,13 @@ Rules:
 """
 
         try:
-            response = self._client.chat.completions.create(
-                model=self.model,
+            response = self._backend.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=200,
             )
 
-            content = response.choices[0].message.content
+            content = response.content
             # Strip reasoning model thinking tags
             content = re.sub(r'<think>.*?</think>\s*', '', content, flags=re.DOTALL)
             return self._parse_response(content)
@@ -201,14 +191,13 @@ Rules:
 """
 
         try:
-            response = self._client.chat.completions.create(
-                model=self.model,
+            response = self._backend.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=100 * len(batch),
             )
 
-            content = response.choices[0].message.content
+            content = response.content
             # Strip reasoning model thinking tags
             content = re.sub(r'<think>.*?</think>\s*', '', content, flags=re.DOTALL)
             return self._parse_batch_response(content, len(batch))
@@ -330,18 +319,9 @@ Rules:
             )
 
     def check_connection(self) -> bool:
-        """Check if the LLM server is available."""
-        try:
-            response = self._client.models.list()
-            model_ids = [m.id for m in response.data]
-            return self.model in model_ids or len(model_ids) > 0
-        except Exception:
-            return False
+        """Check if the LLM backend is available."""
+        return self._backend.check_connection()
 
     def get_available_models(self) -> list[str]:
         """Get list of available models."""
-        try:
-            response = self._client.models.list()
-            return [m.id for m in response.data]
-        except Exception:
-            return []
+        return self._backend.get_available_models()

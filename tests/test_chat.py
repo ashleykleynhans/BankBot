@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from src.chat import ChatInterface, _edit_distance
 from src.database import Database
+from src.llm_backend import LLMBackend, LLMResponse
 
 
 class TestEditDistance:
@@ -35,12 +36,15 @@ class TestEditDistance:
         assert _edit_distance("abc", "") == 3
 
 
-def mock_openai_response(content: str) -> Mock:
-    """Create a mock OpenAI chat completion response."""
-    response = Mock()
-    response.choices = [Mock(message=Mock(content=content))]
-    response.usage = None  # Explicitly set to None so code uses token estimation
-    return response
+def mock_llm_response(content: str) -> LLMResponse:
+    """Create a mock LLM response."""
+    return LLMResponse(content=content)
+
+
+@pytest.fixture
+def mock_backend():
+    """Create a mock LLM backend."""
+    return Mock(spec=LLMBackend)
 
 
 @pytest.fixture
@@ -69,43 +73,60 @@ def mock_db():
 
 
 @pytest.fixture
-def chat(mock_db):
-    """Create a chat interface with mock database."""
-    with patch('src.chat.OpenAI'):
-        c = ChatInterface(mock_db)
-        c._client.with_options.return_value = c._client
-        return c
+def chat(mock_db, mock_backend):
+    """Create a chat interface with mock database and backend."""
+    return ChatInterface(mock_db, backend=mock_backend)
 
 
 class TestChatInit:
     """Tests for ChatInterface initialization."""
 
-    def test_init_creates_empty_history(self, mock_db):
+    def test_init_creates_empty_history(self, mock_db, mock_backend):
         """Test initialization creates empty conversation history."""
-        chat = ChatInterface(mock_db)
+        chat = ChatInterface(mock_db, backend=mock_backend)
         assert chat._conversation_history == []
 
-    def test_init_stores_model(self, mock_db):
-        """Test initialization stores model name."""
-        chat = ChatInterface(mock_db, model="mistral")
-        assert chat.model == "mistral"
+    def test_init_stores_backend(self, mock_db, mock_backend):
+        """Test initialization stores backend."""
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        assert chat._backend is mock_backend
+
+    @patch('src.llm_backend.OpenAIBackend')
+    def test_init_creates_openai_backend_when_none(self, mock_openai_backend, mock_db):
+        """Test initialization creates OpenAIBackend when backend=None."""
+        mock_backend_instance = Mock()
+        mock_openai_backend.return_value = mock_backend_instance
+
+        chat = ChatInterface(
+            mock_db,
+            backend=None,
+            host="myhost",
+            port=5678,
+            model="mymodel"
+        )
+
+        mock_openai_backend.assert_called_once_with(
+            host="myhost",
+            port=5678,
+            model="mymodel"
+        )
+        assert chat._backend is mock_backend_instance
 
 
 class TestClearContext:
     """Tests for clearing chat context."""
 
-    def test_clear_context_clears_history(self, mock_db):
+    def test_clear_context_clears_history(self, mock_db, mock_backend):
         """Test clear_context clears conversation history and transactions."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            # Populate history and transactions
-            chat._conversation_history = [{"role": "user", "content": "test"}]
-            chat._last_transactions = [{"description": "Test", "amount": 100}]
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        # Populate history and transactions
+        chat._conversation_history = [{"role": "user", "content": "test"}]
+        chat._last_transactions = [{"description": "Test", "amount": 100}]
 
-            chat.clear_context()
+        chat.clear_context()
 
-            assert chat._conversation_history == []
-            assert chat._last_transactions == []
+        assert chat._conversation_history == []
+        assert chat._last_transactions == []
 
 
 class TestSearchTermExtraction:
@@ -132,29 +153,29 @@ class TestSearchTermExtraction:
         assert "groceries" in terms
         assert "shopping" in terms
 
-    def test_extract_corrects_typos_via_llm(self, chat):
+    def test_extract_corrects_typos_via_llm(self, chat, mock_backend):
         """Test LLM corrects typos like sportify -> spotify."""
-        chat._client.chat.completions.create.return_value = mock_openai_response("Spotify")
+        mock_backend.chat_completion.return_value = mock_llm_response("Spotify")
         terms = chat._extract_search_terms("when did the sportify price increase")
         assert terms == ["spotify"]
 
-    def test_extract_handles_llm_verbose_response(self, chat):
+    def test_extract_handles_llm_verbose_response(self, chat, mock_backend):
         """Test parsing handles verbose LLM responses like 'Metaflix -> Netflix'."""
-        chat._client.chat.completions.create.return_value = mock_openai_response("Metaflix -> Netflix")
+        mock_backend.chat_completion.return_value = mock_llm_response("Metaflix -> Netflix")
         terms = chat._extract_search_terms("show me metflicks payments")
         assert terms == ["netflix"]
 
-    def test_extract_falls_back_on_llm_error(self, chat):
+    def test_extract_falls_back_on_llm_error(self, chat, mock_backend):
         """Test fallback to simple extraction when LLM fails."""
-        chat._client.chat.completions.create.side_effect = Exception("LLM error")
+        mock_backend.chat_completion.side_effect = Exception("LLM error")
         terms = chat._extract_search_terms("woolworths groceries")
         # Should fall back to simple extraction
         assert "woolworths" in terms
         assert "groceries" in terms
 
-    def test_extract_falls_back_on_empty_llm_response(self, chat):
+    def test_extract_falls_back_on_empty_llm_response(self, chat, mock_backend):
         """Test fallback when LLM returns empty response."""
-        chat._client.chat.completions.create.return_value = mock_openai_response("")
+        mock_backend.chat_completion.return_value = mock_llm_response("")
         terms = chat._extract_search_terms("woolworths groceries")
         # Should fall back to simple extraction
         assert "woolworths" in terms
@@ -505,36 +526,36 @@ class TestPriceChangeDetection:
 class TestConversationHistory:
     """Tests for conversation history management."""
 
-    def test_history_stores_user_message(self, chat, mock_db):
+    def test_history_stores_user_message(self, chat, mock_db, mock_backend):
         """Test user messages are stored in history."""
-        chat._client.chat.completions.create.return_value = mock_openai_response("Test response")
+        mock_backend.chat_completion.return_value = mock_llm_response("Test response")
 
         chat._get_llm_response("test query", "test context")
 
         assert len(chat._conversation_history) == 2
         assert chat._conversation_history[0]["role"] == "user"
 
-    def test_history_stores_assistant_response(self, chat, mock_db):
+    def test_history_stores_assistant_response(self, chat, mock_db, mock_backend):
         """Test assistant responses are stored in history."""
-        chat._client.chat.completions.create.return_value = mock_openai_response("Test response")
+        mock_backend.chat_completion.return_value = mock_llm_response("Test response")
 
         chat._get_llm_response("test query", "test context")
 
         assert chat._conversation_history[1]["role"] == "assistant"
         assert chat._conversation_history[1]["content"] == "Test response"
 
-    def test_history_accumulates(self, chat, mock_db):
+    def test_history_accumulates(self, chat, mock_db, mock_backend):
         """Test conversation history accumulates over multiple turns."""
-        chat._client.chat.completions.create.return_value = mock_openai_response("Response")
+        mock_backend.chat_completion.return_value = mock_llm_response("Response")
 
         chat._get_llm_response("query 1", "context 1")
         chat._get_llm_response("query 2", "context 2")
 
         assert len(chat._conversation_history) == 4
 
-    def test_history_sent_to_llm(self, chat, mock_db):
+    def test_history_sent_to_llm(self, chat, mock_db, mock_backend):
         """Test full history is sent to LLM."""
-        chat._client.chat.completions.create.return_value = mock_openai_response("Response")
+        mock_backend.chat_completion.return_value = mock_llm_response("Response")
 
         # First query
         chat._get_llm_response("query 1", "context 1")
@@ -542,8 +563,8 @@ class TestConversationHistory:
         # Second query - should include first exchange
         chat._get_llm_response("query 2", "context 2")
 
-        # Check the messages sent to chat
-        call_args = chat._client.chat.completions.create.call_args
+        # Check the messages sent to backend
+        call_args = mock_backend.chat_completion.call_args
         messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
 
         # Should have system + 3 history messages (user1, asst1, user2)
@@ -554,9 +575,9 @@ class TestConversationHistory:
         assert messages[2]["role"] == "assistant"
         assert messages[3]["role"] == "user"
 
-    def test_history_not_added_on_error(self, chat, mock_db):
+    def test_history_not_added_on_error(self, chat, mock_db, mock_backend):
         """Test history not updated on LLM error."""
-        chat._client.chat.completions.create.side_effect = Exception("Connection error")
+        mock_backend.chat_completion.side_effect = Exception("Connection error")
 
         chat._get_llm_response("test query", "test context")
 
@@ -567,9 +588,9 @@ class TestConversationHistory:
 class TestLLMResponse:
     """Tests for LLM response handling."""
 
-    def test_handles_llm_error(self, chat, mock_db):
+    def test_handles_llm_error(self, chat, mock_db, mock_backend):
         """Test LLM errors are handled gracefully."""
-        chat._client.chat.completions.create.side_effect = Exception("Connection refused")
+        mock_backend.chat_completion.side_effect = Exception("Connection refused")
 
         result = chat._get_llm_response("test", "context")
 
@@ -579,7 +600,7 @@ class TestLLMResponse:
 class TestAskMethod:
     """Tests for single query ask method."""
 
-    def test_ask_returns_response(self, mock_db):
+    def test_ask_returns_response(self, mock_db, mock_backend):
         """Test ask method returns LLM response."""
         # Need to set up mock_db before creating chat
         mock_db.get_transactions_by_category.return_value = [
@@ -587,40 +608,61 @@ class TestAskMethod:
              "category": "groceries", "transaction_type": "debit"}
         ]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response(
-                "Your last grocery purchase was R500"
-            )
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response(
+            "Your last grocery purchase was R500"
+        )
 
-            result, transactions, _ = chat.ask("when did I last buy groceries")
+        result, transactions, _ = chat.ask("when did I last buy groceries")
 
-            assert "500" in result
+        assert "500" in result
 
-    def test_ask_follow_up_uses_previous_transactions(self, mock_db):
+    def test_ask_uses_actual_token_counts_when_available(self, mock_db, mock_backend):
+        """Test ask uses actual token counts from LLM response when available."""
+        mock_db.get_transactions_by_category.return_value = [
+            {"date": "2025-01-15", "description": "Woolworths", "amount": 500,
+             "category": "groceries", "transaction_type": "debit"}
+        ]
+
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        # Return response with actual token counts
+        mock_backend.chat_completion.return_value = LLMResponse(
+            content="Your last grocery purchase was R500",
+            prompt_tokens=150,
+            completion_tokens=25,
+            total_tokens=175,
+        )
+
+        _, _, llm_stats = chat.ask("when did I last buy groceries")
+
+        # Verify actual token counts are used, not estimates
+        assert llm_stats["completion_tokens"] == 25
+        assert llm_stats["prompt_tokens"] == 150
+        assert llm_stats["total_tokens"] == 175
+
+    def test_ask_follow_up_uses_previous_transactions(self, mock_db, mock_backend):
         """Test ask method uses previous transactions for follow-up queries."""
         mock_db.get_transactions_by_category.return_value = [
             {"date": "2025-01-15", "description": "Woolworths", "amount": 500,
              "category": "groceries", "transaction_type": "debit"}
         ]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response("Response")
 
-            # First query - should fetch transactions
-            _, txns, _ = chat.ask("show groceries")
-            assert len(txns) == 1
+        # First query - should fetch transactions
+        _, txns, _ = chat.ask("show groceries")
+        assert len(txns) == 1
 
-            # Reset mock to verify it's not called again
-            mock_db.get_transactions_by_category.reset_mock()
+        # Reset mock to verify it's not called again
+        mock_db.get_transactions_by_category.reset_mock()
 
-            # Follow-up query - should use previous transactions
-            _, txns, _ = chat.ask("list them")
+        # Follow-up query - should use previous transactions
+        _, txns, _ = chat.ask("list them")
 
-            # Should NOT have fetched new transactions
-            mock_db.get_transactions_by_category.assert_not_called()
-            mock_db.search_transactions.assert_not_called()
+        # Should NOT have fetched new transactions
+        mock_db.get_transactions_by_category.assert_not_called()
+        mock_db.search_transactions.assert_not_called()
 
 
 class TestChatStart:
@@ -628,54 +670,48 @@ class TestChatStart:
 
     def test_start_quit_command(self, mock_db):
         """Test start exits on quit command."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
 
-            # Simulate user typing 'quit'
-            with patch.object(chat.console, 'input', return_value='quit'):
-                chat.start()
+        # Simulate user typing 'quit'
+        with patch.object(chat.console, 'input', return_value='quit'):
+            chat.start()
 
     def test_start_exit_command(self, mock_db):
         """Test start exits on exit command."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
 
-            with patch.object(chat.console, 'input', return_value='exit'):
-                chat.start()
+        with patch.object(chat.console, 'input', return_value='exit'):
+            chat.start()
 
     def test_start_q_command(self, mock_db):
         """Test start exits on q command."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
 
-            with patch.object(chat.console, 'input', return_value='q'):
-                chat.start()
+        with patch.object(chat.console, 'input', return_value='q'):
+            chat.start()
 
     def test_start_empty_input(self, mock_db):
         """Test start handles empty input."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
 
-            # Return empty string first, then quit
-            inputs = iter(['', 'quit'])
-            with patch.object(chat.console, 'input', side_effect=lambda x: next(inputs)):
-                chat.start()
+        # Return empty string first, then quit
+        inputs = iter(['', 'quit'])
+        with patch.object(chat.console, 'input', side_effect=lambda x: next(inputs)):
+            chat.start()
 
     def test_start_keyboard_interrupt(self, mock_db):
         """Test start handles KeyboardInterrupt."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
 
-            with patch.object(chat.console, 'input', side_effect=KeyboardInterrupt()):
-                chat.start()
+        with patch.object(chat.console, 'input', side_effect=KeyboardInterrupt()):
+            chat.start()
 
     def test_start_eof_error(self, mock_db):
         """Test start handles EOFError."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
 
-            with patch.object(chat.console, 'input', side_effect=EOFError()):
-                chat.start()
+        with patch.object(chat.console, 'input', side_effect=EOFError()):
+            chat.start()
 
     def test_start_processes_query(self, mock_db):
         """Test start processes user queries."""
@@ -684,14 +720,14 @@ class TestChatStart:
              "category": "groceries", "transaction_type": "debit"}
         ]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
+        mock_backend = Mock(spec=LLMBackend)
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response("Response")
 
-            # Return query first, then quit
-            inputs = iter(['show groceries', 'quit'])
-            with patch.object(chat.console, 'input', side_effect=lambda x: next(inputs)):
-                chat.start()
+        # Return query first, then quit
+        inputs = iter(['show groceries', 'quit'])
+        with patch.object(chat.console, 'input', side_effect=lambda x: next(inputs)):
+            chat.start()
 
 
 class TestDisplayTransactions:
@@ -699,54 +735,50 @@ class TestDisplayTransactions:
 
     def test_display_transactions_debit(self, mock_db):
         """Test displaying debit transactions."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
 
-            transactions = [
-                {"date": "2025-01-15", "description": "Test", "amount": 500,
-                 "category": "other", "transaction_type": "debit"}
-            ]
+        transactions = [
+            {"date": "2025-01-15", "description": "Test", "amount": 500,
+             "category": "other", "transaction_type": "debit"}
+        ]
 
-            # Should not raise
-            chat._display_transactions(transactions)
+        # Should not raise
+        chat._display_transactions(transactions)
 
     def test_display_transactions_credit(self, mock_db):
         """Test displaying credit transactions."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
 
-            transactions = [
-                {"date": "2025-01-15", "description": "Salary", "amount": 10000,
-                 "category": "salary", "transaction_type": "credit"}
-            ]
+        transactions = [
+            {"date": "2025-01-15", "description": "Salary", "amount": 10000,
+             "category": "salary", "transaction_type": "credit"}
+        ]
 
-            chat._display_transactions(transactions)
+        chat._display_transactions(transactions)
 
     def test_display_transactions_limits_to_10(self, mock_db):
         """Test display limits to 10 transactions."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
 
-            transactions = [
-                {"date": f"2025-01-{i:02d}", "description": f"Test {i}",
-                 "amount": 100, "category": "other", "transaction_type": "debit"}
-                for i in range(1, 20)
-            ]
+        transactions = [
+            {"date": f"2025-01-{i:02d}", "description": f"Test {i}",
+             "amount": 100, "category": "other", "transaction_type": "debit"}
+            for i in range(1, 20)
+        ]
 
-            # Should not raise and should only show 10
-            chat._display_transactions(transactions)
+        # Should not raise and should only show 10
+        chat._display_transactions(transactions)
 
     def test_display_transactions_no_category(self, mock_db):
         """Test displaying transactions without category."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
 
-            transactions = [
-                {"date": "2025-01-15", "description": "Test", "amount": 500,
-                 "category": None, "transaction_type": "debit"}
-            ]
+        transactions = [
+            {"date": "2025-01-15", "description": "Test", "amount": 500,
+             "category": None, "transaction_type": "debit"}
+        ]
 
-            chat._display_transactions(transactions)
+        chat._display_transactions(transactions)
 
 
 class TestProcessQuery:
@@ -759,13 +791,13 @@ class TestProcessQuery:
              "category": "groceries", "transaction_type": "debit"}
         ]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response(
-                "Here are your transactions"
-            )
+        mock_backend = Mock(spec=LLMBackend)
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response(
+            "Here are your transactions"
+        )
 
-            chat._process_query("show groceries")
+        chat._process_query("show groceries")
 
     def test_process_query_hides_many_transactions(self, mock_db):
         """Test process_query hides table when many transactions."""
@@ -777,14 +809,14 @@ class TestProcessQuery:
         mock_db.get_all_transactions.return_value = many_transactions
         mock_db.search_transactions.return_value = []  # No search results
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response(
-                "Found many transactions"
-            )
+        mock_backend = Mock(spec=LLMBackend)
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response(
+            "Found many transactions"
+        )
 
-            # Should not display table for > 10 transactions
-            chat._process_query("random query with no matches")
+        # Should not display table for > 10 transactions
+        chat._process_query("random query with no matches")
 
 
 class TestFindRelevantTransactionsExtended:
@@ -794,39 +826,36 @@ class TestFindRelevantTransactionsExtended:
         """Test finding transactions by income keyword."""
         mock_db.get_transactions_by_type.return_value = []
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._find_relevant_transactions("show my income")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        chat._find_relevant_transactions("show my income")
 
-            mock_db.get_transactions_by_type.assert_called_with("credit")
+        mock_db.get_transactions_by_type.assert_called_with("credit")
 
     def test_find_debit_keyword_falls_through(self, mock_db):
         """Test debit/expense/payment keywords don't return all debits."""
         mock_db.search_transactions.return_value = []
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            # These keywords should NOT trigger get_transactions_by_type
-            # but should fall through to search, then return empty (no fallback)
-            result = chat._find_relevant_transactions("show my expenses")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        # These keywords should NOT trigger get_transactions_by_type
+        # but should fall through to search, then return empty (no fallback)
+        result = chat._find_relevant_transactions("show my expenses")
 
-            # Should NOT have called get_transactions_by_type for debits
-            # (because returning all debits is too many)
-            # Also should not fallback since this is a specific query
-            mock_db.get_all_transactions.assert_not_called()
-            assert result == []
+        # Should NOT have called get_transactions_by_type for debits
+        # (because returning all debits is too many)
+        # Also should not fallback since this is a specific query
+        mock_db.get_all_transactions.assert_not_called()
+        assert result == []
 
     def test_find_payment_keyword_falls_through(self, mock_db):
         """Test payment keyword falls through to search, no fallback."""
         mock_db.search_transactions.return_value = []
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            result = chat._find_relevant_transactions("show payment history")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        result = chat._find_relevant_transactions("show payment history")
 
-            # Specific query - no fallback to recent transactions
-            mock_db.get_all_transactions.assert_not_called()
-            assert result == []
+        # Specific query - no fallback to recent transactions
+        mock_db.get_all_transactions.assert_not_called()
+        assert result == []
 
     def test_fee_search_keeps_fees(self, mock_db):
         """Test searching for fees keeps fee transactions."""
@@ -836,12 +865,11 @@ class TestFindRelevantTransactionsExtended:
         ]
         mock_db.search_transactions.return_value = fee_transactions
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            result = chat._find_relevant_transactions("show my fees")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        result = chat._find_relevant_transactions("show my fees")
 
-            # Should keep fee transactions when searching for fees
-            assert len(result) == 2
+        # Should keep fee transactions when searching for fees
+        assert len(result) == 2
 
 
 class TestDescriptionFilterSynonyms:
@@ -858,15 +886,14 @@ class TestDescriptionFilterSynonyms:
         ]
         mock_db.get_transactions_by_category.return_value = home_maintenance_transactions
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            result = chat._find_relevant_transactions("roof repairs")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        result = chat._find_relevant_transactions("roof repairs")
 
-            # Should call get_transactions_by_category with home_maintenance
-            mock_db.get_transactions_by_category.assert_called_with("home_maintenance")
-            # Should filter to only roof-related transactions
-            assert len(result) == 1
-            assert "roof" in result[0]["description"].lower()
+        # Should call get_transactions_by_category with home_maintenance
+        mock_db.get_transactions_by_category.assert_called_with("home_maintenance")
+        # Should filter to only roof-related transactions
+        assert len(result) == 1
+        assert "roof" in result[0]["description"].lower()
 
     def test_pool_query_filters_home_maintenance(self, mock_db):
         """Test 'pool' query matches home_maintenance but filters by pool in description."""
@@ -878,13 +905,12 @@ class TestDescriptionFilterSynonyms:
         ]
         mock_db.get_transactions_by_category.return_value = home_maintenance_transactions
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            result = chat._find_relevant_transactions("pool expenses")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        result = chat._find_relevant_transactions("pool expenses")
 
-            # Should filter to only pool-related transactions
-            assert len(result) == 2
-            assert all("pool" in tx["description"].lower() for tx in result)
+        # Should filter to only pool-related transactions
+        assert len(result) == 2
+        assert all("pool" in tx["description"].lower() for tx in result)
 
     def test_electrician_query_filters_home_maintenance(self, mock_db):
         """Test 'electrician' query matches home_maintenance and filters correctly."""
@@ -896,13 +922,12 @@ class TestDescriptionFilterSynonyms:
         ]
         mock_db.get_transactions_by_category.return_value = home_maintenance_transactions
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            result = chat._find_relevant_transactions("electrician costs")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        result = chat._find_relevant_transactions("electrician costs")
 
-            # Should filter to only electrician-related transactions
-            assert len(result) == 1
-            assert "electrician" in result[0]["description"].lower()
+        # Should filter to only electrician-related transactions
+        assert len(result) == 1
+        assert "electrician" in result[0]["description"].lower()
 
 
 class TestFollowUpDetection:
@@ -910,81 +935,70 @@ class TestFollowUpDetection:
 
     def test_greeting_not_follow_up(self, mock_db):
         """Test greetings are never detected as follow-ups."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            assert chat._is_follow_up_query("hi") is False
-            assert chat._is_follow_up_query("hello") is False
-            assert chat._is_follow_up_query("thanks") is False
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        assert chat._is_follow_up_query("hi") is False
+        assert chat._is_follow_up_query("hello") is False
+        assert chat._is_follow_up_query("thanks") is False
 
     def test_detects_them_as_follow_up(self, mock_db):
         """Test 'them' is detected as follow-up."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            assert chat._is_follow_up_query("group them by date") is True
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        assert chat._is_follow_up_query("group them by date") is True
 
     def test_detects_these_as_follow_up(self, mock_db):
         """Test 'these' is detected as follow-up."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            assert chat._is_follow_up_query("summarize these") is True
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        assert chat._is_follow_up_query("summarize these") is True
 
     def test_detects_sort_as_follow_up(self, mock_db):
         """Test 'sort' is detected as follow-up."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            assert chat._is_follow_up_query("sort by amount") is True
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        assert chat._is_follow_up_query("sort by amount") is True
 
     def test_detects_total_as_follow_up(self, mock_db):
         """Test 'total' is detected as follow-up."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            assert chat._is_follow_up_query("what's the total?") is True
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        assert chat._is_follow_up_query("what's the total?") is True
 
     def test_short_query_without_keywords_is_follow_up(self, mock_db):
         """Test short queries without specific keywords are follow-ups."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            assert chat._is_follow_up_query("by date") is True
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        assert chat._is_follow_up_query("by date") is True
 
     def test_specific_query_not_follow_up(self, mock_db):
         """Test query with specific keywords is not follow-up."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            assert chat._is_follow_up_query("show electricity transactions") is False
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        assert chat._is_follow_up_query("show electricity transactions") is False
 
     def test_show_query_not_follow_up(self, mock_db):
         """Test 'show' query is not follow-up."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            assert chat._is_follow_up_query("show my groceries") is False
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        assert chat._is_follow_up_query("show my groceries") is False
 
     def test_category_name_query_not_follow_up(self, mock_db):
         """Test short query with category name is not follow-up."""
         # "airtime" is a category but not in the hardcoded keywords
         mock_db.get_all_categories.return_value = ["airtime", "groceries", "fuel"]
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            # Short query (≤5 words) with category name should NOT be follow-up
-            assert chat._is_follow_up_query("how much airtime?") is False
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        # Short query (≤5 words) with category name should NOT be follow-up
+        assert chat._is_follow_up_query("how much airtime?") is False
 
     def test_pay_name_query_not_follow_up(self, mock_db):
         """Test 'Did I pay Name?' is not a follow-up."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            # "Did I pay Paul?" should trigger a new search, not be a follow-up
-            assert chat._is_follow_up_query("Did I pay Paul?") is False
-            assert chat._is_follow_up_query("Have I paid John?") is False
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        # "Did I pay Paul?" should trigger a new search, not be a follow-up
+        assert chat._is_follow_up_query("Did I pay Paul?") is False
+        assert chat._is_follow_up_query("Have I paid John?") is False
 
     def test_proper_noun_query_not_follow_up(self, mock_db):
         """Test queries with proper nouns (names) are not follow-ups."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            # "Chanel Smith payments" should trigger a new search, not be a follow-up
-            assert chat._is_follow_up_query("Chanel Smith payments") is False
-            assert chat._is_follow_up_query("List Chanel Smith payments") is False
-            # Single proper noun should also work
-            assert chat._is_follow_up_query("Netflix history") is False
-            assert chat._is_follow_up_query("Woolworths total") is False
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        # "Chanel Smith payments" should trigger a new search, not be a follow-up
+        assert chat._is_follow_up_query("Chanel Smith payments") is False
+        assert chat._is_follow_up_query("List Chanel Smith payments") is False
+        # Single proper noun should also work
+        assert chat._is_follow_up_query("Netflix history") is False
+        assert chat._is_follow_up_query("Woolworths total") is False
 
 
 class TestFollowUpContext:
@@ -998,24 +1012,24 @@ class TestFollowUpContext:
         ]
         mock_db.search_transactions.return_value = electricity_transactions
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
+        mock_backend = Mock(spec=LLMBackend)
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response("Response")
 
-            # First query - gets electricity transactions
-            chat._process_query("show electricity")
+        # First query - gets electricity transactions
+        chat._process_query("show electricity")
 
-            # Verify transactions were stored
-            assert chat._last_transactions == electricity_transactions
+        # Verify transactions were stored
+        assert chat._last_transactions == electricity_transactions
 
-            # Reset mock to track new calls
-            mock_db.search_transactions.reset_mock()
+        # Reset mock to track new calls
+        mock_db.search_transactions.reset_mock()
 
-            # Follow-up query should use stored transactions
-            chat._process_query("group them by month")
+        # Follow-up query should use stored transactions
+        chat._process_query("group them by month")
 
-            # Should NOT have searched for new transactions
-            mock_db.search_transactions.assert_not_called()
+        # Should NOT have searched for new transactions
+        mock_db.search_transactions.assert_not_called()
 
     def test_new_query_replaces_stored_transactions(self, mock_db):
         """Test new specific query replaces stored transactions."""
@@ -1024,34 +1038,34 @@ class TestFollowUpContext:
         groceries = [{"date": "2025-01-16", "description": "Groceries", "amount": 300,
                      "category": "groceries", "transaction_type": "debit"}]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
+        mock_backend = Mock(spec=LLMBackend)
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response("Response")
 
-            # First query
-            mock_db.search_transactions.return_value = electricity
-            chat._process_query("show electricity")
-            assert chat._last_transactions == electricity
+        # First query
+        mock_db.search_transactions.return_value = electricity
+        chat._process_query("show electricity")
+        assert chat._last_transactions == electricity
 
-            # New specific query should replace
-            mock_db.get_transactions_by_category.return_value = groceries
-            chat._process_query("show groceries")
-            assert chat._last_transactions == groceries
+        # New specific query should replace
+        mock_db.get_transactions_by_category.return_value = groceries
+        chat._process_query("show groceries")
+        assert chat._last_transactions == groceries
 
     def test_empty_previous_transactions_fetches_new(self, mock_db):
         """Test follow-up with no previous transactions tries to fetch new."""
         mock_db.search_transactions.return_value = []
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
-            chat._last_transactions = []  # Empty
+        mock_backend = Mock(spec=LLMBackend)
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response("Response")
+        chat._last_transactions = []  # Empty
 
-            # Even though it looks like follow-up, should try to fetch new
-            # Use vague query that triggers fallback
-            chat._process_query("show recent transactions")
+        # Even though it looks like follow-up, should try to fetch new
+        # Use vague query that triggers fallback
+        chat._process_query("show recent transactions")
 
-            mock_db.get_all_transactions.assert_called()
+        mock_db.get_all_transactions.assert_called()
 
     def test_proper_noun_query_clears_previous_transactions(self, mock_db):
         """Test querying for non-existent name clears previous transactions."""
@@ -1065,20 +1079,20 @@ class TestFollowUpContext:
         mock_db.get_transactions_by_category.return_value = subscriptions
         mock_db.search_transactions.return_value = []
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
+        mock_backend = Mock(spec=LLMBackend)
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response("Response")
 
-            # First query - gets subscriptions
-            _, txns, _ = chat.ask("show subscriptions")
-            assert txns == subscriptions
+        # First query - gets subscriptions
+        _, txns, _ = chat.ask("show subscriptions")
+        assert txns == subscriptions
 
-            # Query for non-existent name - should clear and return empty
-            chat._client.chat.completions.create.return_value = mock_openai_response("Chanel Smith")
-            _, txns, _ = chat.ask("List Chanel Smith payments")
+        # Query for non-existent name - should clear and return empty
+        mock_backend.chat_completion.return_value = mock_llm_response("Chanel Smith")
+        _, txns, _ = chat.ask("List Chanel Smith payments")
 
-            # CRITICAL: returned transactions must be empty for non-existent names
-            assert txns == []
+        # CRITICAL: returned transactions must be empty for non-existent names
+        assert txns == []
 
     def test_proper_noun_query_via_ask_clears_transactions(self, mock_db):
         """Test ask() properly clears transactions for proper noun queries."""
@@ -1087,19 +1101,19 @@ class TestFollowUpContext:
              "category": "other", "transaction_type": "debit"},
         ]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response("No results")
-            mock_db.search_transactions.return_value = []
+        mock_backend = Mock(spec=LLMBackend)
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response("No results")
+        mock_db.search_transactions.return_value = []
 
-            # Simulate having old transactions from previous query
-            chat._last_transactions = old_transactions
+        # Simulate having old transactions from previous query
+        chat._last_transactions = old_transactions
 
-            # Query with proper nouns should clear and search fresh
-            _, txns, _ = chat.ask("Chanel Smith payments")
+        # Query with proper nouns should clear and search fresh
+        _, txns, _ = chat.ask("Chanel Smith payments")
 
-            # Must return empty since search found nothing
-            assert txns == []
+        # Must return empty since search found nothing
+        assert txns == []
 
 
 class TestScopeExpansion:
@@ -1110,78 +1124,77 @@ class TestScopeExpansion:
         groceries = [{"date": "2025-01-15", "description": "PNP", "amount": 500,
                       "category": "groceries", "transaction_type": "debit"}]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
+        mock_backend = Mock(spec=LLMBackend)
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response("Response")
 
-            # Set up previous search state directly
-            chat._last_search_query = "show groceries"
-            chat._last_transactions = []
+        # Set up previous search state directly
+        chat._last_search_query = "show groceries"
+        chat._last_transactions = []
 
-            # Mock for the scope expansion search
-            mock_db.get_transactions_by_category.return_value = groceries
+        # Mock for the scope expansion search
+        mock_db.get_transactions_by_category.return_value = groceries
 
-            # Scope expansion request
-            chat._process_query("check all history")
+        # Scope expansion request
+        chat._process_query("check all history")
 
-            # Should have re-searched with previous query (groceries)
-            mock_db.get_transactions_by_category.assert_called_with("groceries")
-            assert chat._last_transactions == groceries
+        # Should have re-searched with previous query (groceries)
+        mock_db.get_transactions_by_category.assert_called_with("groceries")
+        assert chat._last_transactions == groceries
 
     def test_scope_expansion_in_ask(self, mock_db):
         """Test 'check all history' in ask() re-searches with previous query."""
         groceries = [{"date": "2025-01-15", "description": "PNP", "amount": 500,
                       "category": "groceries", "transaction_type": "debit"}]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
+        mock_backend = Mock(spec=LLMBackend)
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response("Response")
 
-            # Set up previous search state directly
-            chat._last_search_query = "show groceries"
-            chat._last_transactions = []
+        # Set up previous search state directly
+        chat._last_search_query = "show groceries"
+        chat._last_transactions = []
 
-            # Mock for the scope expansion search
-            mock_db.get_transactions_by_category.return_value = groceries
+        # Mock for the scope expansion search
+        mock_db.get_transactions_by_category.return_value = groceries
 
-            # Scope expansion request
-            _, txns, _ = chat.ask("check all history not just this month")
+        # Scope expansion request
+        _, txns, _ = chat.ask("check all history not just this month")
 
-            # Should have re-searched with previous query (groceries)
-            mock_db.get_transactions_by_category.assert_called_with("groceries")
-            assert txns == groceries
+        # Should have re-searched with previous query (groceries)
+        mock_db.get_transactions_by_category.assert_called_with("groceries")
+        assert txns == groceries
 
     def test_scope_expansion_patterns(self, mock_db):
         """Test various scope expansion patterns are detected."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
 
-            # All of these should be detected as scope expansion
-            assert chat._is_scope_expansion_request("check all history")
-            assert chat._is_scope_expansion_request("not just this month")
-            assert chat._is_scope_expansion_request("search all history")
-            assert chat._is_scope_expansion_request("include everything")
-            assert chat._is_scope_expansion_request("across all time")
-            assert chat._is_scope_expansion_request("entire history please")
+        # All of these should be detected as scope expansion
+        assert chat._is_scope_expansion_request("check all history")
+        assert chat._is_scope_expansion_request("not just this month")
+        assert chat._is_scope_expansion_request("search all history")
+        assert chat._is_scope_expansion_request("include everything")
+        assert chat._is_scope_expansion_request("across all time")
+        assert chat._is_scope_expansion_request("entire history please")
 
-            # These should NOT be scope expansion
-            assert not chat._is_scope_expansion_request("show groceries")
-            assert not chat._is_scope_expansion_request("how much did I spend")
+        # These should NOT be scope expansion
+        assert not chat._is_scope_expansion_request("show groceries")
+        assert not chat._is_scope_expansion_request("how much did I spend")
 
     def test_scope_expansion_without_previous_query(self, mock_db):
         """Test scope expansion with no previous query falls through to normal search."""
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._client.chat.completions.create.return_value = mock_openai_response("Response")
-            chat._last_search_query = ""  # No previous query
+        mock_backend = Mock(spec=LLMBackend)
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response("Response")
+        chat._last_search_query = ""  # No previous query
 
-            mock_db.get_all_transactions.return_value = []
-            mock_db.search_transactions.return_value = []
-            _, txns, _ = chat.ask("check all history")
+        mock_db.get_all_transactions.return_value = []
+        mock_db.search_transactions.return_value = []
+        _, txns, _ = chat.ask("check all history")
 
-            # Should fall through to else branch (normal search), not scope expansion
-            # The _last_search_query should now be set to the current query
-            assert chat._last_search_query == "check all history"
+        # Should fall through to else branch (normal search), not scope expansion
+        # The _last_search_query should now be set to the current query
+        assert chat._last_search_query == "check all history"
 
 
 class TestBudgetQueries:
@@ -1200,15 +1213,14 @@ class TestBudgetQueries:
              "category": "groceries", "transaction_type": "debit"}
         ]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            result = chat._find_relevant_transactions("How much of my electricity budget have I used?")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        result = chat._find_relevant_transactions("How much of my electricity budget have I used?")
 
-            mock_db.get_latest_statement.assert_called()
-            mock_db.get_transactions_by_statement.assert_called_with("287")
-            # Should only return electricity transactions
-            assert len(result) == 1
-            assert result[0]["category"] == "electricity"
+        mock_db.get_latest_statement.assert_called()
+        mock_db.get_transactions_by_statement.assert_called_with("287")
+        # Should only return electricity transactions
+        assert len(result) == 1
+        assert result[0]["category"] == "electricity"
 
     def test_general_budget_query_returns_no_transactions(self, mock_db):
         """Test general budget queries return no transactions."""
@@ -1216,12 +1228,11 @@ class TestBudgetQueries:
             "id": 1, "statement_number": "287", "statement_date": "2025-12-01"
         }
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            result = chat._find_relevant_transactions("How much budget remaining?")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        result = chat._find_relevant_transactions("How much budget remaining?")
 
-            # Should return empty list for general budget queries
-            assert result == []
+        # Should return empty list for general budget queries
+        assert result == []
 
     def test_budget_query_with_category_filters_both(self, mock_db):
         """Test budget query with category filters to latest statement AND category."""
@@ -1236,13 +1247,12 @@ class TestBudgetQueries:
         ]
         mock_db.get_all_categories.return_value = ["utilities", "groceries"]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            result = chat._find_relevant_transactions("How much of my utilities budget?")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        result = chat._find_relevant_transactions("How much of my utilities budget?")
 
-            # Should only return utilities transactions
-            assert len(result) == 1
-            assert result[0]["category"] == "utilities"
+        # Should only return utilities transactions
+        assert len(result) == 1
+        assert result[0]["category"] == "utilities"
 
     def test_budget_context_includes_budget_info(self, mock_db):
         """Test build_context includes budget info for budget queries."""
@@ -1264,14 +1274,13 @@ class TestBudgetQueries:
              "category": "utilities", "transaction_type": "debit"}
         ]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            context = chat._build_context(transactions, "How much of my budget have I used?")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        context = chat._build_context(transactions, "How much of my budget have I used?")
 
-            assert "Budget status" in context
-            assert "utilities" in context
-            assert "R2,000.00 spent of R3,000.00 budget" in context
-            assert "Latest statement: #287" in context
+        assert "Budget status" in context
+        assert "utilities" in context
+        assert "R2,000.00 spent of R3,000.00 budget" in context
+        assert "Latest statement: #287" in context
 
     def test_budget_context_shows_over_budget(self, mock_db):
         """Test budget context shows OVER BUDGET status."""
@@ -1289,11 +1298,10 @@ class TestBudgetQueries:
         transactions = [{"date": "2025-12-15", "description": "Test", "amount": 2000,
                         "category": "utilities", "transaction_type": "debit"}]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            context = chat._build_context(transactions, "budget status")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        context = chat._build_context(transactions, "budget status")
 
-            assert "OVER BUDGET" in context
+        assert "OVER BUDGET" in context
 
     def test_non_budget_query_no_budget_info(self, mock_db):
         """Test non-budget queries don't include budget info."""
@@ -1302,13 +1310,12 @@ class TestBudgetQueries:
         transactions = [{"date": "2025-12-15", "description": "Test", "amount": 500,
                         "category": "groceries", "transaction_type": "debit"}]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            context = chat._build_context(transactions, "show groceries")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        context = chat._build_context(transactions, "show groceries")
 
-            # Should NOT have budget info
-            assert "Budget status" not in context
-            mock_db.get_all_budgets.assert_not_called()
+        # Should NOT have budget info
+        assert "Budget status" not in context
+        mock_db.get_all_budgets.assert_not_called()
 
 
 class TestSynonymExpansion:
@@ -1321,11 +1328,10 @@ class TestSynonymExpansion:
             {"date": "2025-01-15", "description": "Transfer to savings", "amount": 1000}
         ]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._find_relevant_transactions("how much have I saved")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        chat._find_relevant_transactions("how much have I saved")
 
-            mock_db.get_transactions_by_category.assert_called_with("savings")
+        mock_db.get_transactions_by_category.assert_called_with("savings")
 
     def test_doctor_expands_to_medical(self, mock_db):
         """Test 'doctor' query finds medical category."""
@@ -1334,11 +1340,10 @@ class TestSynonymExpansion:
             {"date": "2025-01-15", "description": "Dr Smith", "amount": 500}
         ]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._find_relevant_transactions("when did I pay the doctor")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        chat._find_relevant_transactions("when did I pay the doctor")
 
-            mock_db.get_transactions_by_category.assert_called_with("medical")
+        mock_db.get_transactions_by_category.assert_called_with("medical")
 
     def test_petrol_expands_to_fuel(self, mock_db):
         """Test 'petrol' query finds fuel category."""
@@ -1347,11 +1352,10 @@ class TestSynonymExpansion:
             {"date": "2025-01-15", "description": "Shell", "amount": 800}
         ]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            chat._find_relevant_transactions("how much petrol did I buy")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        chat._find_relevant_transactions("how much petrol did I buy")
 
-            mock_db.get_transactions_by_category.assert_called_with("fuel")
+        mock_db.get_transactions_by_category.assert_called_with("fuel")
 
 
 class TestDateRangeOnly:
@@ -1365,12 +1369,11 @@ class TestDateRangeOnly:
             {"date": "2025-12-20", "description": "Transaction 2", "amount": 200},
         ]
 
-        with patch('src.chat.OpenAI'):
-            chat = ChatInterface(mock_db)
-            result = chat._find_relevant_transactions("show me last month")
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        result = chat._find_relevant_transactions("show me last month")
 
-            mock_db.get_transactions_in_date_range.assert_called()
-            assert len(result) == 2
+        mock_db.get_transactions_in_date_range.assert_called()
+        assert len(result) == 2
 
 
 class TestBudgetUpdate:
@@ -1445,7 +1448,7 @@ class TestBudgetUpdate:
         assert txns == []  # Budget updates return no transactions
         mock_db.upsert_budget.assert_called_with("groceries", 500.0)
         # LLM should not be called for budget updates
-        chat._client.chat.assert_not_called()
+        chat._backend.chat_completion.assert_not_called()
 
     def test_delete_budget_for_category(self, chat, mock_db):
         """Test 'delete budget for groceries'."""

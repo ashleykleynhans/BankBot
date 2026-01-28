@@ -5,17 +5,15 @@ including typo correction, budget management, and transaction searches.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, Mock
 
 from src.chat import ChatInterface
+from src.llm_backend import LLMBackend, LLMResponse
 
 
-def mock_openai_response(content: str):
-    """Create a mock OpenAI API response."""
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = content
-    return mock_response
+def mock_llm_response(content: str):
+    """Create a mock LLM response."""
+    return LLMResponse(content=content)
 
 
 @pytest.fixture
@@ -49,18 +47,21 @@ def mock_db():
 
 
 @pytest.fixture
-def chat(mock_db):
-    """Create a ChatInterface with mocked dependencies."""
-    with patch("src.chat.OpenAI") as mock_openai:
-        mock_client = MagicMock()
-        mock_openai.return_value = mock_client
-        # with_options() returns a copy; keep the same mock so responses work
-        mock_client.with_options.return_value = mock_client
-        # Default LLM response
-        mock_client.chat.completions.create.return_value = mock_openai_response("Test response")
+def mock_backend():
+    """Create a mock LLM backend."""
+    backend = Mock(spec=LLMBackend)
+    # Default LLM response
+    backend.chat_completion.return_value = mock_llm_response("Test response")
+    return backend
 
-        chat = ChatInterface(mock_db, host="localhost", port=1234, model="test-model")
-        yield chat
+
+@pytest.fixture
+def chat(mock_db, mock_backend):
+    """Create a ChatInterface with mocked dependencies."""
+    chat = ChatInterface(mock_db, backend=mock_backend)
+    # Attach backend to chat so tests can access it
+    chat._mock_backend = mock_backend
+    yield chat
 
 
 class TestGreetings:
@@ -243,7 +244,7 @@ class TestTypoCorrection:
     def test_chanel_smith_not_corrected_to_chase(self, chat, mock_db):
         """'List Chanel Smith payments' should NOT match 'chase' in 'Purchase'."""
         # LLM might return "chase" but validation should reject it
-        chat._client.chat.completions.create.return_value = mock_openai_response("Chase")
+        chat._mock_backend.chat_completion.return_value = mock_llm_response("Chase")
 
         # No transactions match "Chanel Smith"
         mock_db.search_transactions.return_value = []
@@ -256,7 +257,7 @@ class TestTypoCorrection:
     def test_sportify_corrected_to_spotify(self, chat, mock_db):
         """'when did the sportify price increase?' should correct to spotify."""
         # LLM returns correction
-        chat._client.chat.completions.create.return_value = mock_openai_response("Spotify")
+        chat._mock_backend.chat_completion.return_value = mock_llm_response("Spotify")
 
         mock_db.search_transactions.return_value = [
             {"date": "2025-01-22", "description": "Spotify Premium", "amount": -99.99,
@@ -272,7 +273,7 @@ class TestTypoCorrection:
     def test_metaflix_corrected_to_netflix_via_arrow(self, chat, mock_db):
         """'How much did I spent on Metaflix?' should correct to Netflix."""
         # LLM returns "Metaflix -> Netflix" format
-        chat._client.chat.completions.create.return_value = mock_openai_response("Metaflix -> Netflix")
+        chat._mock_backend.chat_completion.return_value = mock_llm_response("Metaflix -> Netflix")
 
         netflix_result = [
             {"date": "2025-01-22", "description": "Netflix.com", "amount": -199.00,
@@ -353,7 +354,7 @@ class TestPriceChangeDetection:
 
     def test_netflix_price_increase_detected(self, chat, mock_db):
         """'When did the Metaflix price increase?' should detect Netflix price change."""
-        chat._client.chat.completions.create.return_value = mock_openai_response("Metaflix -> Netflix")
+        chat._mock_backend.chat_completion.return_value = mock_llm_response("Metaflix -> Netflix")
 
         mock_db.search_transactions.return_value = [
             {"date": "2025-01-22", "description": "Netflix.com", "amount": 199.00,
@@ -535,7 +536,7 @@ class TestExtractSearchTermsSingleWord:
         """LLM returning a single word present in query should use that term."""
         # Use lowercase query so no proper nouns are detected,
         # forcing the code into _extract_search_terms → single word LLM path
-        chat._client.chat.completions.create.return_value = mock_openai_response("spotify")
+        chat._mock_backend.chat_completion.return_value = mock_llm_response("spotify")
 
         mock_db.search_transactions.return_value = [
             {"date": "2025-12-29", "description": "POS Purchase Spotifyza",
@@ -553,13 +554,13 @@ class TestExtractSearchTermsLLMPaths:
 
     def test_llm_multi_word_name_in_query(self, chat):
         """LLM returning a multi-word name present in the query returns the full phrase."""
-        chat._client.chat.completions.create.return_value = mock_openai_response("chanel smith")
+        chat._mock_backend.chat_completion.return_value = mock_llm_response("chanel smith")
         terms = chat._extract_search_terms("show chanel smith payments")
         assert terms == ["chanel smith"]
 
     def test_llm_skips_short_words(self, chat):
         """LLM words shorter than 3 chars are skipped, falls back to simple extraction."""
-        chat._client.chat.completions.create.return_value = mock_openai_response("at")
+        chat._mock_backend.chat_completion.return_value = mock_llm_response("at")
         terms = chat._extract_search_terms("show stuff at the shop")
         # "at" (len 2) is skipped → falls back to simple terms
         assert "stuff" in terms
@@ -567,7 +568,7 @@ class TestExtractSearchTermsLLMPaths:
 
     def test_llm_single_word_in_query_returned(self, chat):
         """LLM returning a word that appears in the query returns it."""
-        chat._client.chat.completions.create.return_value = mock_openai_response("woolworths")
+        chat._mock_backend.chat_completion.return_value = mock_llm_response("woolworths")
         terms = chat._extract_search_terms("show woolworths groceries")
         assert terms == ["woolworths"]
 
@@ -605,8 +606,8 @@ class TestHistoryAlternation:
         response = chat._get_llm_response("test", "test context")
 
         # Verify LLM was called with properly alternating messages
-        call_args = chat._client.chat.completions.create.call_args
-        messages = call_args[1]["messages"] if "messages" in call_args[1] else call_args[0][0]
+        call_args = chat._mock_backend.chat_completion.call_args
+        messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
         # First message is system, second must be user (not assistant)
         assert messages[0]["role"] == "system"
         assert messages[1]["role"] == "user"

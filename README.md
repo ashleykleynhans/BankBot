@@ -32,13 +32,14 @@ Want to add support for another bank? See [Adding Support for New Banks](
 
 - **Backend**: Python 3.11+ (FastAPI, SQLite)
 - **Frontend**: Svelte 5, Tailwind CSS
-- **AI**: Any OpenAI-compatible API (e.g., [LM Studio](https://lmstudio.ai/))
+- **AI**: MLX (Apple Silicon) or any OpenAI-compatible API (e.g., [LM Studio](https://lmstudio.ai/))
 
 ## Requirements
 
 - Python 3.11+
 - Node.js 18+
-- [LM Studio](https://lmstudio.ai/) or any OpenAI-compatible LLM server
+- **Apple Silicon**: No additional requirements (uses MLX for local inference)
+- **Other platforms**: [LM Studio](https://lmstudio.ai/) or any OpenAI-compatible LLM server
 
 ## Installation
 
@@ -54,11 +55,40 @@ source .venv/bin/activate
 # Install dependencies
 pip install -e .
 
+# Install with MLX support (Apple Silicon only - recommended)
+pip install -e ".[mlx]"
+
 # Install with test dependencies (pytest, coverage)
 pip install -e ".[test]"
+
+# Install with both MLX and test dependencies
+pip install -e ".[mlx,test]"
 ```
 
 ## Setup
+
+### Option A: MLX Backend (Apple Silicon - Recommended)
+
+No external server required. The model runs directly on your Mac using MLX.
+
+1. **Install with MLX support**:
+   ```bash
+   pip install -e ".[mlx]"
+   ```
+
+2. **Configure** (optional - edit `config.yaml`):
+   ```yaml
+   bank: fnb
+   llm:
+     backend: mlx                                  # Use MLX for local inference
+     model: mlx-community/GLM-4.7-Flash-4bit      # Default model (auto-downloaded)
+   ```
+
+3. **Add statements**: Place PDF bank statements in the `statements/` directory
+
+The model will be downloaded automatically on first run (~2.5GB).
+
+### Option B: OpenAI-Compatible API (LM Studio, Ollama, etc.)
 
 1. **Install and start LM Studio**:
    ```bash
@@ -76,13 +106,14 @@ pip install -e ".[test]"
    lms server start
    ```
 
-2. **Configure** (optional - edit `config.yaml`):
+2. **Configure** (`config.yaml`):
    ```yaml
-   bank: fnb                    # Bank parser to use
+   bank: fnb
    llm:
+     backend: openai              # Use OpenAI-compatible API
      host: localhost
-     port: 1234                 # LM Studio default port
-     model: openai/gpt-oss-20b  # Model for classification
+     port: 1234                   # LM Studio default port
+     model: openai/gpt-oss-20b    # Model for classification
    ```
 
 3. **Add statements**: Place PDF bank statements in the `statements/` directory
@@ -200,11 +231,19 @@ Edit `config.yaml` to customize:
 # Bank parser to use
 bank: fnb
 
-# LLM settings (OpenAI-compatible API)
+# LLM settings
 llm:
-  host: localhost
-  port: 1234
-  model: openai/gpt-oss-20b
+  # Backend: "mlx" (Apple Silicon) or "openai" (LM Studio, Ollama, etc.)
+  backend: mlx
+
+  # For MLX backend (Apple Silicon):
+  model: mlx-community/GLM-4.7-Flash-4bit    # HuggingFace model ID
+
+  # For OpenAI backend (uncomment to use):
+  # backend: openai
+  # host: localhost
+  # port: 1234
+  # model: openai/gpt-oss-20b
 
 # File paths
 paths:
@@ -346,6 +385,7 @@ BankBot/
 │   ├── chat.py          # Chat interface
 │   ├── watcher.py       # File watcher
 │   ├── config.py        # Config loader
+│   ├── llm_backend.py   # LLM backend abstraction (MLX/OpenAI)
 │   ├── api/             # REST + WebSocket API
 │   │   ├── app.py       # FastAPI application
 │   │   ├── models.py    # Pydantic schemas
@@ -383,8 +423,9 @@ BankBot/
 
 Your bank statements contain sensitive financial data. This application:
 - Processes everything locally (no cloud services)
-- Uses a local LLM via OpenAI-compatible API
+- Uses a local LLM (MLX on Apple Silicon, or any OpenAI-compatible API)
 - Stores data in a local SQLite database
+- Never sends data to external servers
 
 The `statements/` and `data/` directories are gitignored by default.
 

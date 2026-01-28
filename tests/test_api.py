@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from src.api.app import create_app
 from src.api.session import SessionManager, ChatSession
 from src.api.models import StatsResponse, CategoriesListResponse
+from src.llm_backend import LLMBackend
 
 
 @pytest.fixture
@@ -71,11 +72,18 @@ def mock_config():
 
 
 @pytest.fixture
-def client(mock_db, mock_config):
+def mock_backend():
+    """Create a mock LLM backend."""
+    return Mock(spec=LLMBackend)
+
+
+@pytest.fixture
+def client(mock_db, mock_config, mock_backend):
     """Create test client with mocked dependencies."""
     app = create_app()
     app.state.db = mock_db
     app.state.config = mock_config
+    app.state.backend = mock_backend
     return TestClient(app)
 
 
@@ -359,9 +367,10 @@ class TestSessionManager:
         """Test creating a new session."""
         manager = SessionManager()
         mock_db = Mock()
+        mock_backend = Mock(spec=LLMBackend)
 
         with patch('src.api.session.ChatInterface') as mock_chat:
-            session = manager.create_session(mock_db, "localhost", 11434, "llama3.2")
+            session = manager.create_session(mock_db, mock_backend)
 
         assert session.session_id is not None
         assert manager.active_sessions == 1
@@ -370,9 +379,10 @@ class TestSessionManager:
         """Test retrieving a session."""
         manager = SessionManager()
         mock_db = Mock()
+        mock_backend = Mock(spec=LLMBackend)
 
         with patch('src.api.session.ChatInterface'):
-            session = manager.create_session(mock_db, "localhost", 11434, "llama3.2")
+            session = manager.create_session(mock_db, mock_backend)
             retrieved = manager.get_session(session.session_id)
 
         assert retrieved == session
@@ -386,9 +396,10 @@ class TestSessionManager:
         """Test removing a session."""
         manager = SessionManager()
         mock_db = Mock()
+        mock_backend = Mock(spec=LLMBackend)
 
         with patch('src.api.session.ChatInterface'):
-            session = manager.create_session(mock_db, "localhost", 11434, "llama3.2")
+            session = manager.create_session(mock_db, mock_backend)
             manager.remove_session(session.session_id)
 
         assert manager.active_sessions == 0
@@ -403,9 +414,10 @@ class TestSessionManager:
         """Test updating session activity."""
         manager = SessionManager()
         mock_db = Mock()
+        mock_backend = Mock(spec=LLMBackend)
 
         with patch('src.api.session.ChatInterface'):
-            session = manager.create_session(mock_db, "localhost", 11434, "llama3.2")
+            session = manager.create_session(mock_db, mock_backend)
             original_time = session.last_activity
             session.touch()
 
@@ -415,9 +427,10 @@ class TestSessionManager:
         """Test cleaning up stale sessions."""
         manager = SessionManager()
         mock_db = Mock()
+        mock_backend = Mock(spec=LLMBackend)
 
         with patch('src.api.session.ChatInterface'):
-            session = manager.create_session(mock_db, "localhost", 11434, "llama3.2")
+            session = manager.create_session(mock_db, mock_backend)
             # Artificially age the session
             from datetime import datetime, timedelta
             session.last_activity = datetime.now() - timedelta(hours=2)
@@ -1018,6 +1031,7 @@ class TestLifespan:
             # Patch at module level
             with patch('src.api.app.get_config') as mock_get_config, \
                  patch('src.api.app.Database') as mock_db_class, \
+                 patch('src.api.app.create_backend') as mock_create_backend, \
                  patch('src.api.app.asyncio.create_task', mock_create_task):
                 mock_get_config.return_value = {
                     "paths": {"database": "test.db"},
@@ -1025,6 +1039,8 @@ class TestLifespan:
                 }
                 mock_db = Mock()
                 mock_db_class.return_value = mock_db
+                mock_backend = Mock()
+                mock_create_backend.return_value = mock_backend
 
                 # Import lifespan after patches are applied
                 from src.api.app import lifespan
@@ -1034,6 +1050,7 @@ class TestLifespan:
                     # Verify startup happened
                     assert hasattr(app.state, 'config')
                     assert hasattr(app.state, 'db')
+                    assert hasattr(app.state, 'backend')
                     mock_db_class.assert_called_with("test.db")
                     assert task_created
 

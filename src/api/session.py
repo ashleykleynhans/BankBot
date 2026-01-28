@@ -6,6 +6,7 @@ from datetime import datetime
 
 from ..chat import ChatInterface
 from ..database import Database
+from ..llm_backend import LLMBackend
 
 
 @dataclass
@@ -29,11 +30,11 @@ class SessionManager:
         self._sessions: dict[str, ChatSession] = {}
 
     def create_session(
-        self, db: Database, host: str, port: int, model: str
+        self, db: Database, backend: LLMBackend
     ) -> ChatSession:
         """Create a new chat session with its own ChatInterface."""
         session_id = str(uuid.uuid4())
-        chat_interface = ChatInterface(db=db, host=host, port=port, model=model)
+        chat_interface = ChatInterface(db=db, backend=backend)
         session = ChatSession(session_id=session_id, chat_interface=chat_interface)
         self._sessions[session_id] = session
         return session

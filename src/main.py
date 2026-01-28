@@ -15,6 +15,7 @@ from .chat import ChatInterface
 from .classifier import TransactionClassifier
 from .config import get_config
 from .database import Database
+from .llm_backend import create_backend
 from .parsers import list_available_parsers
 from .watcher import StatementWatcher, import_existing, reimport_statement
 
@@ -29,10 +30,9 @@ def cmd_import(args: argparse.Namespace, config: dict) -> None:
     bank = args.bank if args.bank else config["bank"]
 
     db = Database(config["paths"]["database"])
+    backend = create_backend(config)
     classifier = TransactionClassifier(
-        host=config["llm"]["host"],
-        port=config["llm"]["port"],
-        model=config["llm"]["model"],
+        backend=backend,
         categories=config.get("categories"),
         classification_rules=config.get("classification_rules")
     )
@@ -66,10 +66,9 @@ def cmd_import(args: argparse.Namespace, config: dict) -> None:
 def cmd_watch(args: argparse.Namespace, config: dict) -> None:
     """Watch for new statements and import them automatically."""
     db = Database(config["paths"]["database"])
+    backend = create_backend(config)
     classifier = TransactionClassifier(
-        host=config["llm"]["host"],
-        port=config["llm"]["port"],
-        model=config["llm"]["model"],
+        backend=backend,
         categories=config.get("categories"),
         classification_rules=config.get("classification_rules")
     )
@@ -104,12 +103,8 @@ def cmd_chat(args: argparse.Namespace, config: dict) -> None:
         )
         sys.exit(1)
 
-    chat = ChatInterface(
-        db=db,
-        host=config["llm"]["host"],
-        port=config["llm"]["port"],
-        model=config["llm"]["model"]
-    )
+    backend = create_backend(config)
+    chat = ChatInterface(db=db, backend=backend)
     chat.start()
 
 
@@ -333,10 +328,9 @@ def cmd_reimport(args: argparse.Namespace, config: dict) -> None:
     bank = args.bank if args.bank else config["bank"]
 
     db = Database(config["paths"]["database"])
+    backend = create_backend(config)
     classifier = TransactionClassifier(
-        host=config["llm"]["host"],
-        port=config["llm"]["port"],
-        model=config["llm"]["model"],
+        backend=backend,
         categories=config.get("categories"),
         classification_rules=config.get("classification_rules")
     )

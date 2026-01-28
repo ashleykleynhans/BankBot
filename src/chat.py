@@ -3,13 +3,13 @@ import re
 import time
 from datetime import datetime, timedelta
 
-from openai import OpenAI
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
 from .database import Database
+from .llm_backend import LLMBackend
 
 
 def _edit_distance(a: str, b: str) -> int:
@@ -33,17 +33,16 @@ class ChatInterface:
     def __init__(
         self,
         db: Database,
+        backend: LLMBackend | None = None,
         host: str = "localhost",
         port: int = 11434,
         model: str = "llama3.2"
     ):
         self.db = db
-        self.model = model
-        self._client = OpenAI(
-            base_url=f"http://{host}:{port}/v1",
-            api_key="lm-studio",  # LM Studio doesn't require a real key
-            timeout=60.0,
-        )
+        self._backend = backend
+        if self._backend is None:
+            from .llm_backend import OpenAIBackend
+            self._backend = OpenAIBackend(host=host, port=port, model=model)
         self.console = Console()
         self._conversation_history = []
         self._last_transactions = []  # Store last query's transactions for follow-ups
@@ -483,8 +482,7 @@ class ChatInterface:
 
         # Try LLM for typo correction only
         try:
-            response = self._client.with_options(timeout=15.0).chat.completions.create(
-                model=self.model,
+            response = self._backend.chat_completion(
                 messages=[{
                     "role": "user",
                     "content": f"""In this query, what merchant/company/store is the user asking about? If misspelled, correct it.
@@ -492,9 +490,10 @@ Answer with ONLY the name, nothing else. If you cannot determine the merchant, r
 
 Query: {query}"""
                 }],
-                temperature=0
+                temperature=0,
+                timeout=15.0,
             )
-            terms_text = response.choices[0].message.content.strip().lower()
+            terms_text = response.content.strip().lower()
 
             # Reject if LLM says unknown or returns something not in the query
             if terms_text and terms_text != "unknown":
@@ -810,25 +809,23 @@ Answer concisely and directly."""
             messages.append({"role": "user", "content": user_message})
 
             start_time = time.time()
-            response = self._client.chat.completions.create(
-                model=self.model,
+            response = self._backend.chat_completion(
                 messages=messages,
-                temperature=0.3
+                temperature=0.3,
             )
             elapsed_time = time.time() - start_time
 
-            assistant_response = response.choices[0].message.content.strip()
+            assistant_response = response.content.strip()
             # Strip model reasoning/thinking tags and box formatting markers
             assistant_response = re.sub(r'<think>.*?</think>\s*', '', assistant_response, flags=re.DOTALL)
             assistant_response = re.sub(r'<\|begin_of_box\|>|<\|end_of_box\|>', '', assistant_response)
             assistant_response = assistant_response.strip()
 
             # Extract token usage if available
-            usage = getattr(response, 'usage', None)
-            if usage:
-                completion_tokens = getattr(usage, 'completion_tokens', 0)
-                prompt_tokens = getattr(usage, 'prompt_tokens', 0)
-                total_tokens = getattr(usage, 'total_tokens', 0)
+            if response.completion_tokens is not None:
+                completion_tokens = response.completion_tokens
+                prompt_tokens = response.prompt_tokens or 0
+                total_tokens = response.total_tokens or 0
             else:
                 # Estimate tokens (~4 chars per token)
                 completion_tokens = len(assistant_response) // 4
