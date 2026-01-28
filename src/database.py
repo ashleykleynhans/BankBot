@@ -422,3 +422,15 @@ class Database:
         with self._get_connection() as conn:
             cursor = conn.execute("DELETE FROM budgets")
             return cursor.rowcount
+
+    def update_statements_bank(self, bank: str) -> int:
+        """Update bank for all statements that have NULL bank.
+
+        Returns number of statements updated.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE statements SET bank = ? WHERE bank IS NULL",
+                (bank,)
+            )
+            return cursor.rowcount

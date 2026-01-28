@@ -432,3 +432,45 @@ class TestDeleteStatement:
         remaining = db.get_all_transactions()
         assert len(remaining) == 1
         assert remaining[0]["description"] == "Tx3"
+
+
+class TestUpdateStatementsBank:
+    """Tests for update_statements_bank method."""
+
+    def test_update_statements_bank_sets_null_banks(self, db):
+        """Test updating bank for statements with NULL bank."""
+        # Insert statements without bank
+        db.insert_statement("stmt1.pdf", account_number="111", statement_date="2025-01-01")
+        db.insert_statement("stmt2.pdf", account_number="222", statement_date="2025-02-01")
+
+        # Update bank
+        updated = db.update_statements_bank("fnb")
+        assert updated == 2
+
+        # Verify bank is set
+        statements = db.get_all_statements()
+        assert all(s["bank"] == "fnb" for s in statements)
+
+    def test_update_statements_bank_skips_existing(self, db):
+        """Test update doesn't overwrite existing bank values."""
+        # Insert statement with bank already set
+        db.insert_statement("stmt1.pdf", bank="capitec", account_number="111")
+        # Insert statement without bank
+        db.insert_statement("stmt2.pdf", account_number="222")
+
+        # Update bank
+        updated = db.update_statements_bank("fnb")
+        assert updated == 1  # Only one had NULL bank
+
+        # Verify original bank preserved
+        statements = db.get_all_statements()
+        banks = {s["filename"]: s["bank"] for s in statements}
+        assert banks["stmt1.pdf"] == "capitec"
+        assert banks["stmt2.pdf"] == "fnb"
+
+    def test_update_statements_bank_returns_zero_when_all_set(self, db):
+        """Test returns zero when all statements already have bank."""
+        db.insert_statement("stmt1.pdf", bank="fnb", account_number="111")
+
+        updated = db.update_statements_bank("capitec")
+        assert updated == 0

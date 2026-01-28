@@ -470,6 +470,24 @@ def cmd_import_budget(args: argparse.Namespace, config: dict) -> None:
     console.print(f"[green]Imported {imported} budgets from {input_path}[/green]")
 
 
+def cmd_update_bank(args: argparse.Namespace, config: dict) -> None:
+    """Update bank for existing statements that have no bank set."""
+    from .database import Database
+
+    db_path = config.get("paths", {}).get("database", "./data/statements.db")
+    db = Database(db_path)
+
+    # Use provided bank or fall back to config
+    bank = args.bank or config.get("bank", "fnb")
+
+    updated = db.update_statements_bank(bank)
+
+    if updated > 0:
+        console.print(f"[green]Updated {updated} statement(s) with bank: {bank}[/green]")
+    else:
+        console.print("[yellow]No statements needed updating (all already have bank set)[/yellow]")
+
+
 def cmd_serve(args: argparse.Namespace, config: dict) -> None:
     """Start the API server."""
     import uvicorn
@@ -663,6 +681,10 @@ Examples:
     debug_ocr_parser.add_argument("--scale", type=int, default=4, help="Image scale factor (default: 4)")
     debug_ocr_parser.add_argument("--save-image", action="store_true", help="Save rendered image for inspection")
 
+    # Update bank command
+    update_bank_parser = subparsers.add_parser("update-bank", help="Update bank for existing statements")
+    update_bank_parser.add_argument("--bank", help="Bank name to set (default: from config)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -693,6 +715,7 @@ Examples:
         "export-budget": cmd_export_budget,
         "import-budget": cmd_import_budget,
         "debug-ocr": cmd_debug_ocr,
+        "update-bank": cmd_update_bank,
     }
 
     cmd_func = commands.get(args.command)

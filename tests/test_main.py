@@ -1362,3 +1362,74 @@ class TestCmdDebugOcr:
         assert args.page == 2
         assert args.scale == 6
         assert args.save_image is True
+
+
+class TestCmdUpdateBank:
+    """Tests for update-bank command."""
+
+    def test_update_bank_updates_statements(self, tmp_path):
+        """Test update-bank updates statements with NULL bank."""
+        from src.database import Database
+        from src.main import cmd_update_bank
+
+        db_path = tmp_path / "test.db"
+        db = Database(db_path)
+
+        # Insert statements without bank
+        db.insert_statement("stmt1.pdf", account_number="111")
+        db.insert_statement("stmt2.pdf", account_number="222")
+
+        args = argparse.Namespace(bank=None)
+        config = {
+            "bank": "fnb",
+            "paths": {"database": str(db_path)},
+        }
+
+        cmd_update_bank(args, config)
+
+        # Verify bank was updated
+        statements = db.get_all_statements()
+        assert all(s["bank"] == "fnb" for s in statements)
+
+    def test_update_bank_uses_arg_over_config(self, tmp_path):
+        """Test --bank argument overrides config."""
+        from src.database import Database
+        from src.main import cmd_update_bank
+
+        db_path = tmp_path / "test.db"
+        db = Database(db_path)
+
+        db.insert_statement("stmt1.pdf", account_number="111")
+
+        args = argparse.Namespace(bank="capitec")
+        config = {
+            "bank": "fnb",
+            "paths": {"database": str(db_path)},
+        }
+
+        cmd_update_bank(args, config)
+
+        statements = db.get_all_statements()
+        assert statements[0]["bank"] == "capitec"
+
+    def test_update_bank_no_statements_to_update(self, tmp_path, capsys):
+        """Test message when no statements need updating."""
+        from src.database import Database
+        from src.main import cmd_update_bank
+
+        db_path = tmp_path / "test.db"
+        db = Database(db_path)
+
+        # Insert statement with bank already set
+        db.insert_statement("stmt1.pdf", bank="fnb", account_number="111")
+
+        args = argparse.Namespace(bank=None)
+        config = {
+            "bank": "fnb",
+            "paths": {"database": str(db_path)},
+        }
+
+        cmd_update_bank(args, config)
+
+        captured = capsys.readouterr()
+        assert "No statements needed updating" in captured.out
