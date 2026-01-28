@@ -11,6 +11,15 @@ from src.llm_backend import (
     create_backend,
 )
 
+# Check if mlx_lm is available (Apple Silicon only)
+try:
+    import mlx_lm
+    HAS_MLX = True
+except ImportError:
+    HAS_MLX = False
+
+requires_mlx = pytest.mark.skipif(not HAS_MLX, reason="mlx-lm not installed")
+
 
 class TestLLMResponse:
     """Tests for LLMResponse dataclass."""
@@ -169,6 +178,7 @@ class TestOpenAIBackend:
         assert backend.get_available_models() == []
 
 
+@requires_mlx
 class TestMLXBackend:
     """Tests for MLXBackend."""
 
@@ -303,6 +313,7 @@ class TestCreateBackend:
         assert isinstance(backend, OpenAIBackend)
         assert backend.model == "test-model"
 
+    @requires_mlx
     @patch("mlx_lm.sample_utils.make_sampler")
     @patch("mlx_lm.load")
     @patch("mlx_lm.generate")
@@ -318,6 +329,7 @@ class TestCreateBackend:
         backend = create_backend(config)
         assert isinstance(backend, MLXBackend)
 
+    @requires_mlx
     @patch("mlx_lm.sample_utils.make_sampler")
     @patch("mlx_lm.load")
     @patch("mlx_lm.generate")
@@ -328,6 +340,7 @@ class TestCreateBackend:
         backend = create_backend(config)
         assert isinstance(backend, MLXBackend)
 
+    @requires_mlx
     @patch("mlx_lm.sample_utils.make_sampler")
     @patch("mlx_lm.load")
     @patch("mlx_lm.generate")
@@ -357,6 +370,7 @@ class TestCreateBackend:
             timeout=30.0,
         )
 
+    @requires_mlx
     def test_empty_config(self):
         """Test with empty config uses defaults."""
         # This will try mlx backend which requires mlx_lm
