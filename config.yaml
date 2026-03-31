@@ -1,10 +1,18 @@
 # Bank Statement Chat Bot Configuration
 
 # Bank configuration
-bank: fnb                    # Options: fnb (more to be added)
+bank: fnb                    # Options: fnb, investec
 
 # PDF password (if your bank statements are password-protected)
 # pdf_password: your_password_here
+
+# Investec Programmable Banking API (optional)
+# Credentials can also be set via environment variables:
+#   INVESTEC_CLIENT_ID, INVESTEC_CLIENT_SECRET, INVESTEC_API_KEY
+investec:
+  client_id: ""
+  client_secret: ""
+  api_key: ""
 
 # LLM settings (OpenAI-compatible API, e.g., LM Studio)
 llm:
@@ -79,6 +87,16 @@ categories:
 # Note: More specific rules should come before general ones
 #       (ie. ORDERING MATTERS!)
 classification_rules:
+  # Investec transfers
+  "TRANSFER FNB": transfer
+  "Credit Card 10014670171": transfer
+
+  # Investec-specific
+  "KEANU SAVINGS": savings
+  "KEANU PAYMENT": eft_payment
+  "Keanu Tiny Tacklers": rugby_lessons
+  "Tots In Teams": eft_payment
+
   # Withdrawals
   "ATM Cash": withdrawal
   "ATM Withdrawal": withdrawal
