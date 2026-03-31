@@ -67,3 +67,116 @@ class TestStatementDateExtraction:
         date = parser._extract_statement_date(text)
         result = parser._derive_statement_number(date)
         assert result == "2026-01"
+
+
+class TestTransactionParsing:
+    """Tests for transaction line parsing."""
+
+    def test_parse_credit_transaction(self, parser):
+        """Test parsing a credit (deposit) transaction."""
+        text = (
+            "Transaction detail\n"
+            "Posted Date Trans Date Transaction Description Debit Credit Balance\n"
+            "Balance brought forward 0.00\n"
+            "13 Jan 2026 13 Jan 2026 TRANSFER FNB 3,544.00 3,544.00\n"
+            "Closing Balance 3,544.00\n"
+            "Online payments, deposits, fees and interest\n"
+        )
+        result = parser._parse_transactions(text, "2026-01-31")
+        assert len(result) == 1
+        assert result[0].date == "2026-01-13"
+        assert result[0].description == "TRANSFER FNB"
+        assert result[0].amount == 3544.00
+        assert result[0].balance == 3544.00
+
+    def test_parse_debit_transaction(self, parser):
+        """Test parsing a debit (payment) transaction."""
+        text = (
+            "Transaction detail\n"
+            "Posted Date Trans Date Transaction Description Debit Credit Balance\n"
+            "Balance brought forward 10,000.00\n"
+            "13 Jan 2026 13 Jan 2026 KEANU PAYMENT 502.00 9,498.00\n"
+            "Closing Balance 9,498.00\n"
+            "Online payments, deposits, fees and interest\n"
+        )
+        result = parser._parse_transactions(text, "2026-01-31")
+        assert len(result) == 1
+        assert result[0].date == "2026-01-13"
+        assert result[0].description == "KEANU PAYMENT"
+        assert result[0].amount == -502.00
+        assert result[0].balance == 9498.00
+
+    def test_parse_multiple_transactions(self, parser):
+        """Test parsing multiple transactions from a real statement excerpt."""
+        text = (
+            "Transaction detail\n"
+            "Posted Date Trans Date Transaction Description Debit Credit Balance\n"
+            "Balance brought forward 0.00\n"
+            "13 Jan 2026 13 Jan 2026 TRANSFER FNB 3,544.00 3,544.00\n"
+            "13 Jan 2026 13 Jan 2026 KEANU PAYMENT 502.00 3,042.00\n"
+            "16 Jan 2026 16 Jan 2026 Dog Parlour 460.00 1,979.00\n"
+            "22 Jan 2026 22 Jan 2026 TRANSFER FNB 61,000.00 62,499.00\n"
+            "31 Jan 2026 31 Jan 2026 CARTRACK S104549692 185.90 27,693.10\n"
+            "1 Feb 2026 31 Jan 2026 Credit interest 3.09 27,696.19\n"
+            "Closing Balance 27,696.19\n"
+            "Online payments, deposits, fees and interest\n"
+        )
+        result = parser._parse_transactions(text, "2026-01-31")
+        assert len(result) == 6
+        assert result[0].description == "TRANSFER FNB"
+        assert result[0].amount == 3544.00
+        assert result[1].description == "KEANU PAYMENT"
+        assert result[1].amount == -502.00
+        assert result[2].description == "Dog Parlour"
+        assert result[2].amount == -460.00
+        assert result[3].description == "TRANSFER FNB"
+        assert result[3].amount == 61000.00
+        assert result[4].description == "CARTRACK S104549692"
+        assert result[4].amount == -185.90
+        assert result[5].description == "Credit interest"
+        assert result[5].date == "2026-01-31"
+        assert result[5].amount == 3.09
+
+    def test_skips_balance_brought_forward(self, parser):
+        """Test that 'Balance brought forward' is skipped."""
+        text = (
+            "Transaction detail\n"
+            "Posted Date Trans Date Transaction Description Debit Credit Balance\n"
+            "Balance brought forward 0.00\n"
+            "13 Jan 2026 13 Jan 2026 TRANSFER FNB 3,544.00 3,544.00\n"
+            "Closing Balance 3,544.00\n"
+            "Online payments, deposits, fees and interest\n"
+        )
+        result = parser._parse_transactions(text, "2026-01-31")
+        assert len(result) == 1
+        assert result[0].description == "TRANSFER FNB"
+
+    def test_stops_at_online_payments_section(self, parser):
+        """Test that parsing stops at the duplicate summary section."""
+        text = (
+            "Transaction detail\n"
+            "Posted Date Trans Date Transaction Description Debit Credit Balance\n"
+            "Balance brought forward 0.00\n"
+            "13 Jan 2026 13 Jan 2026 TRANSFER FNB 3,544.00 3,544.00\n"
+            "Closing Balance 3,544.00\n"
+            "Online payments, deposits, fees and interest\n"
+            "Trans Date Description Fees Debit Credit\n"
+            "13 Jan 2026 TRANSFER FNB 3,544.00\n"
+        )
+        result = parser._parse_transactions(text, "2026-01-31")
+        assert len(result) == 1
+
+    def test_parse_transaction_with_reference_number(self, parser):
+        """Test parsing a transaction with a long reference number."""
+        text = (
+            "Transaction detail\n"
+            "Posted Date Trans Date Transaction Description Debit Credit Balance\n"
+            "Balance brought forward 10,000.00\n"
+            "22 Jan 2026 22 Jan 2026 Mr AM Kleynhans 1100114374501 603.00 9,397.00\n"
+            "Closing Balance 9,397.00\n"
+            "Online payments, deposits, fees and interest\n"
+        )
+        result = parser._parse_transactions(text, "2026-01-31")
+        assert len(result) == 1
+        assert result[0].description == "Mr AM Kleynhans 1100114374501"
+        assert result[0].amount == -603.00
