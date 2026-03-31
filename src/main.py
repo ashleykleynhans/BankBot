@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -488,6 +489,155 @@ def cmd_update_bank(args: argparse.Namespace, config: dict) -> None:
         console.print("[yellow]No statements needed updating (all already have bank set)[/yellow]")
 
 
+def cmd_fetch_investec(args: argparse.Namespace, config: dict) -> None:
+    """Fetch transactions from the Investec Programmable Banking API."""
+    from .investec_api import InvestecAPI
+
+    investec_config = config.get("investec", {})
+
+    # Environment variables take precedence over config
+    client_id = os.environ.get("INVESTEC_CLIENT_ID") or investec_config.get("client_id", "")
+    client_secret = os.environ.get("INVESTEC_CLIENT_SECRET") or investec_config.get("client_secret", "")
+    api_key = os.environ.get("INVESTEC_API_KEY") or investec_config.get("api_key", "")
+
+    if not all([client_id, client_secret, api_key]):
+        console.print("[red]Investec API credentials not configured.[/red]")
+        console.print(
+            "[dim]Set them in config.yaml under 'investec' or via environment variables:\n"
+            "  INVESTEC_CLIENT_ID, INVESTEC_CLIENT_SECRET, INVESTEC_API_KEY[/dim]"
+        )
+        sys.exit(1)
+
+    api = InvestecAPI(client_id, client_secret, api_key)
+
+    try:
+        api.authenticate()
+        console.print("[green]Authenticated with Investec API[/green]")
+    except Exception as e:
+        console.print(f"[red]Authentication failed: {e}[/red]")
+        sys.exit(1)
+
+    # List accounts mode
+    if args.list_accounts:
+        accounts = api.get_accounts()
+        table = Table(title="Investec Accounts")
+        table.add_column("Account ID")
+        table.add_column("Account Number")
+        table.add_column("Name")
+        table.add_column("Product")
+        for acc in accounts:
+            table.add_row(
+                acc.get("accountId", ""),
+                acc.get("accountNumber", ""),
+                acc.get("referenceName", acc.get("accountName", "")),
+                acc.get("productName", ""),
+            )
+        console.print(table)
+        return
+
+    # Determine date range
+    if args.from_date and args.to_date:
+        from_date = args.from_date
+        to_date = args.to_date
+    else:
+        today = datetime.now()
+        from_date = today.replace(day=1).strftime("%Y-%m-%d")
+        to_date = today.strftime("%Y-%m-%d")
+
+    # Determine which accounts to fetch
+    accounts = api.get_accounts()
+
+    if args.account:
+        account_ids = [args.account]
+    elif args.all:
+        account_ids = [acc["accountId"] for acc in accounts]
+    elif len(accounts) == 1:
+        account_ids = [accounts[0]["accountId"]]
+    else:
+        console.print("[yellow]Multiple accounts found. Specify --account <id> or --all[/yellow]")
+        for acc in accounts:
+            console.print(f"  {acc['accountId']} - {acc.get('accountNumber', '')} ({acc.get('referenceName', '')})")
+        sys.exit(1)
+
+    # Set up classification pipeline
+    db = Database(config["paths"]["database"])
+    backend = create_backend(config)
+    classifier = TransactionClassifier(
+        backend=backend,
+        categories=config.get("categories"),
+        classification_rules=config.get("classification_rules"),
+    )
+
+    if not classifier.check_connection():
+        console.print("[red]Cannot connect to LLM server[/red]")
+        sys.exit(1)
+
+    for account_id in account_ids:
+        console.print(f"\n[cyan]Fetching transactions for account {account_id}...[/cyan]")
+        console.print(f"[dim]Date range: {from_date} to {to_date}[/dim]")
+
+        synthetic_filename = f"investec_api_{account_id}_{from_date}_{to_date}"
+        if db.statement_exists(synthetic_filename):
+            console.print("[yellow]Already imported this exact range. Skipping.[/yellow]")
+            continue
+
+        try:
+            # Look up account number to avoid extra API call
+            acct_number = next(
+                (a["accountNumber"] for a in accounts if a["accountId"] == account_id), None
+            )
+            statement_data = api.fetch_as_statement_data(
+                account_id, from_date, to_date, account_number=acct_number
+            )
+        except Exception as e:
+            console.print(f"[red]Failed to fetch transactions: {e}[/red]")
+            continue
+
+        if not statement_data.transactions:
+            console.print("[yellow]No transactions found for this period.[/yellow]")
+            continue
+
+        # Deduplicate against existing transactions
+        account_number = statement_data.account_number or ""
+        original_count = len(statement_data.transactions)
+        deduped_transactions = [
+            tx for tx in statement_data.transactions
+            if not db.transaction_exists(
+                account_number=account_number,
+                date=tx.date,
+                description=tx.description,
+                amount=abs(tx.amount),
+            )
+        ]
+        skipped = original_count - len(deduped_transactions)
+        if skipped:
+            console.print(f"[dim]  Skipped {skipped} duplicate transaction(s)[/dim]")
+
+        if not deduped_transactions:
+            console.print("[yellow]All transactions already exist. Nothing to import.[/yellow]")
+            continue
+
+        # Insert statement record
+        statement_id = db.insert_statement(
+            filename=synthetic_filename,
+            bank="investec",
+            account_number=statement_data.account_number,
+            statement_date=statement_data.statement_date,
+            statement_number=statement_data.statement_number,
+        )
+
+        # Classify and insert
+        from .watcher import _classify_and_prepare
+        transactions_to_classify = _classify_and_prepare(
+            deduped_transactions, classifier, console
+        )
+        db.insert_transactions_batch(statement_id, transactions_to_classify)
+
+        console.print(
+            f"[green]Imported {len(transactions_to_classify)} transactions[/green]"
+        )
+
+
 def cmd_serve(args: argparse.Namespace, config: dict) -> None:
     """Start the API server."""
     import uvicorn
@@ -685,6 +835,26 @@ Examples:
     update_bank_parser = subparsers.add_parser("update-bank", help="Update bank for existing statements")
     update_bank_parser.add_argument("--bank", help="Bank name to set (default: from config)")
 
+    # Fetch Investec command
+    fetch_investec_parser = subparsers.add_parser(
+        "fetch-investec", help="Fetch transactions from Investec API"
+    )
+    fetch_investec_parser.add_argument(
+        "--from-date", help="Start date YYYY-MM-DD (default: 1st of current month)"
+    )
+    fetch_investec_parser.add_argument(
+        "--to-date", help="End date YYYY-MM-DD (default: today)"
+    )
+    fetch_investec_parser.add_argument(
+        "--account", help="Investec account ID to fetch"
+    )
+    fetch_investec_parser.add_argument(
+        "--all", action="store_true", help="Fetch all accounts"
+    )
+    fetch_investec_parser.add_argument(
+        "--list-accounts", action="store_true", help="List available accounts and exit"
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -716,6 +886,7 @@ Examples:
         "import-budget": cmd_import_budget,
         "debug-ocr": cmd_debug_ocr,
         "update-bank": cmd_update_bank,
+        "fetch-investec": cmd_fetch_investec,
     }
 
     cmd_func = commands.get(args.command)
