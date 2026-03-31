@@ -1,5 +1,7 @@
 """Tests for Investec parser module."""
 
+from pathlib import Path
+
 import pytest
 
 from src.parsers.investec import InvestecParser
@@ -180,3 +182,38 @@ class TestTransactionParsing:
         assert len(result) == 1
         assert result[0].description == "Mr AM Kleynhans 1100114374501"
         assert result[0].amount == -603.00
+
+
+class TestFullPDFParsing:
+    """Integration test with a real Investec statement PDF."""
+
+    @pytest.fixture
+    def sample_pdf_path(self):
+        """Path to a real Investec statement for testing."""
+        path = Path.home() / "Google Drive/My Drive/PERSONAL/INVESTEC/STATEMENTS/2026/Investec-Current-20260201.pdf"
+        if not path.exists():
+            pytest.skip("Sample Investec PDF not available")
+        return path
+
+    def test_full_parse(self, parser, sample_pdf_path):
+        """Test parsing a complete real Investec statement."""
+        result = parser.parse(sample_pdf_path)
+
+        assert result.account_number == "10014670887"
+        assert result.statement_date == "2026-01-31"
+        assert result.statement_number == "2026-01"
+        assert len(result.transactions) == 18
+
+        first = result.transactions[0]
+        assert first.date == "2026-01-13"
+        assert first.description == "TRANSFER FNB"
+        assert first.amount == 3544.00
+
+        second = result.transactions[1]
+        assert second.description == "KEANU PAYMENT"
+        assert second.amount == -502.00
+
+        last = result.transactions[-1]
+        assert last.description == "Credit interest"
+        assert last.amount == 3.09
+        assert last.date == "2026-01-31"
