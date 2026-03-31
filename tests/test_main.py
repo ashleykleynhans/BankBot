@@ -12,7 +12,7 @@ from src import main
 from src.main import (
     cmd_import, cmd_watch, cmd_chat, cmd_list,
     cmd_categories, cmd_stats, cmd_search, cmd_parsers, cmd_rename, cmd_reimport, cmd_serve,
-    cmd_export_budget, cmd_import_budget, cmd_debug_ocr
+    cmd_export_budget, cmd_import_budget, cmd_debug_ocr, cmd_fetch_investec
 )
 
 
@@ -1433,3 +1433,240 @@ class TestCmdUpdateBank:
 
         captured = capsys.readouterr()
         assert "No statements needed updating" in captured.out
+
+
+class TestCmdFetchInvestec:
+    """Tests for cmd_fetch_investec function."""
+
+    def _make_args(self, **kwargs):
+        defaults = {
+            "list_accounts": False,
+            "from_date": None,
+            "to_date": None,
+            "account": None,
+            "all": False,
+        }
+        defaults.update(kwargs)
+        return argparse.Namespace(**defaults)
+
+    def _make_config(self):
+        return {
+            "investec": {
+                "client_id": "cid",
+                "client_secret": "csec",
+                "api_key": "akey",
+            },
+            "paths": {"database": ":memory:"},
+            "llm": {"host": "localhost", "port": 1234, "model": "test"},
+            "categories": ["groceries"],
+            "classification_rules": {},
+        }
+
+    def test_no_credentials_exits(self):
+        """Test exit when credentials are missing."""
+        args = self._make_args()
+        config = {"investec": {}, "paths": {"database": ":memory:"}}
+        with patch.dict("os.environ", {}, clear=True):
+            with pytest.raises(SystemExit):
+                cmd_fetch_investec(args, config)
+
+    @patch("src.main.cmd_fetch_investec.__module__", "src.main")
+    def test_auth_failure_exits(self):
+        """Test exit when authentication fails."""
+        args = self._make_args()
+        config = self._make_config()
+        with patch("src.investec_api.InvestecAPI.authenticate", side_effect=Exception("fail")):
+            with pytest.raises(SystemExit):
+                cmd_fetch_investec(args, config)
+
+    def test_list_accounts(self):
+        """Test --list-accounts mode."""
+        args = self._make_args(list_accounts=True)
+        config = self._make_config()
+        mock_api = MagicMock()
+        mock_api.get_accounts.return_value = [
+            {"accountId": "abc", "accountNumber": "123", "referenceName": "Test", "productName": "Current"},
+        ]
+        with patch("src.investec_api.InvestecAPI", return_value=mock_api):
+            cmd_fetch_investec(args, config)
+        mock_api.get_accounts.assert_called_once()
+
+    def test_single_account_auto_select(self):
+        """Test auto-selecting single account."""
+        args = self._make_args(from_date="2026-01-01", to_date="2026-01-31")
+        config = self._make_config()
+
+        from src.parsers.base import StatementData, Transaction
+        mock_api = MagicMock()
+        mock_api.get_accounts.return_value = [
+            {"accountId": "abc", "accountNumber": "123"},
+        ]
+        mock_api.fetch_as_statement_data.return_value = StatementData(
+            account_number="123",
+            statement_date="2026-01-31",
+            statement_number="2026-01",
+            transactions=[
+                Transaction(date="2026-01-13", description="TEST", amount=-100.0, balance=900.0),
+            ],
+        )
+
+        with patch("src.investec_api.InvestecAPI", return_value=mock_api), \
+             patch("src.main.Database") as mock_db_cls, \
+             patch("src.main.create_backend"), \
+             patch("src.main.TransactionClassifier") as mock_cls:
+            mock_db = mock_db_cls.return_value
+            mock_db.statement_exists.return_value = False
+            mock_db.transaction_exists.return_value = False
+            mock_cls.return_value.check_connection.return_value = True
+            with patch("src.watcher._classify_and_prepare", return_value=[{"date": "2026-01-13", "description": "TEST", "amount": 100.0, "balance": 900.0, "transaction_type": "debit", "category": None, "recipient_or_payer": None, "reference": None, "raw_text": ""}]):
+                cmd_fetch_investec(args, config)
+            mock_db.insert_transactions_batch.assert_called_once()
+
+    def test_multiple_accounts_no_flag_exits(self):
+        """Test exit when multiple accounts and no --account/--all."""
+        args = self._make_args(from_date="2026-01-01", to_date="2026-01-31")
+        config = self._make_config()
+        mock_api = MagicMock()
+        mock_api.get_accounts.return_value = [
+            {"accountId": "a", "accountNumber": "1"},
+            {"accountId": "b", "accountNumber": "2"},
+        ]
+        with patch("src.investec_api.InvestecAPI", return_value=mock_api), \
+             patch("src.main.Database"), \
+             patch("src.main.create_backend"), \
+             patch("src.main.TransactionClassifier") as mock_cls:
+            mock_cls.return_value.check_connection.return_value = True
+            with pytest.raises(SystemExit):
+                cmd_fetch_investec(args, config)
+
+    def test_already_imported_skips(self):
+        """Test skipping already imported range."""
+        args = self._make_args(from_date="2026-01-01", to_date="2026-01-31", account="abc")
+        config = self._make_config()
+        mock_api = MagicMock()
+        mock_api.get_accounts.return_value = [{"accountId": "abc", "accountNumber": "123"}]
+        with patch("src.investec_api.InvestecAPI", return_value=mock_api), \
+             patch("src.main.Database") as mock_db_cls, \
+             patch("src.main.create_backend"), \
+             patch("src.main.TransactionClassifier") as mock_cls:
+            mock_cls.return_value.check_connection.return_value = True
+            mock_db_cls.return_value.statement_exists.return_value = True
+            cmd_fetch_investec(args, config)
+            mock_api.fetch_as_statement_data.assert_not_called()
+
+    def test_no_transactions_found(self):
+        """Test handling when API returns no transactions."""
+        args = self._make_args(from_date="2026-01-01", to_date="2026-01-31", account="abc")
+        config = self._make_config()
+        from src.parsers.base import StatementData
+        mock_api = MagicMock()
+        mock_api.get_accounts.return_value = [{"accountId": "abc", "accountNumber": "123"}]
+        mock_api.fetch_as_statement_data.return_value = StatementData(transactions=[])
+        with patch("src.investec_api.InvestecAPI", return_value=mock_api), \
+             patch("src.main.Database") as mock_db_cls, \
+             patch("src.main.create_backend"), \
+             patch("src.main.TransactionClassifier") as mock_cls:
+            mock_cls.return_value.check_connection.return_value = True
+            mock_db_cls.return_value.statement_exists.return_value = False
+            cmd_fetch_investec(args, config)
+
+    def test_fetch_error_continues(self):
+        """Test that fetch errors are caught and loop continues."""
+        args = self._make_args(from_date="2026-01-01", to_date="2026-01-31", account="abc")
+        config = self._make_config()
+        mock_api = MagicMock()
+        mock_api.get_accounts.return_value = [{"accountId": "abc", "accountNumber": "123"}]
+        mock_api.fetch_as_statement_data.side_effect = Exception("network error")
+        with patch("src.investec_api.InvestecAPI", return_value=mock_api), \
+             patch("src.main.Database") as mock_db_cls, \
+             patch("src.main.create_backend"), \
+             patch("src.main.TransactionClassifier") as mock_cls:
+            mock_cls.return_value.check_connection.return_value = True
+            mock_db_cls.return_value.statement_exists.return_value = False
+            cmd_fetch_investec(args, config)
+
+    def test_all_duplicates_skips_import(self):
+        """Test that all-duplicate transactions skips insert."""
+        args = self._make_args(from_date="2026-01-01", to_date="2026-01-31", account="abc")
+        config = self._make_config()
+        from src.parsers.base import StatementData, Transaction
+        mock_api = MagicMock()
+        mock_api.get_accounts.return_value = [{"accountId": "abc", "accountNumber": "123"}]
+        mock_api.fetch_as_statement_data.return_value = StatementData(
+            account_number="123", transactions=[
+                Transaction(date="2026-01-13", description="TEST", amount=-100.0),
+            ],
+        )
+        with patch("src.investec_api.InvestecAPI", return_value=mock_api), \
+             patch("src.main.Database") as mock_db_cls, \
+             patch("src.main.create_backend"), \
+             patch("src.main.TransactionClassifier") as mock_cls:
+            mock_cls.return_value.check_connection.return_value = True
+            mock_db = mock_db_cls.return_value
+            mock_db.statement_exists.return_value = False
+            mock_db.transaction_exists.return_value = True  # all are dupes
+            cmd_fetch_investec(args, config)
+            mock_db.insert_transactions_batch.assert_not_called()
+
+    def test_default_date_range(self):
+        """Test default date range is current month."""
+        args = self._make_args(account="abc")  # no from_date/to_date
+        config = self._make_config()
+        from src.parsers.base import StatementData
+        mock_api = MagicMock()
+        mock_api.get_accounts.return_value = [{"accountId": "abc", "accountNumber": "123"}]
+        mock_api.fetch_as_statement_data.return_value = StatementData(transactions=[])
+        with patch("src.investec_api.InvestecAPI", return_value=mock_api), \
+             patch("src.main.Database") as mock_db_cls, \
+             patch("src.main.create_backend"), \
+             patch("src.main.TransactionClassifier") as mock_cls:
+            mock_cls.return_value.check_connection.return_value = True
+            mock_db_cls.return_value.statement_exists.return_value = False
+            cmd_fetch_investec(args, config)
+            # Verify it called fetch with some dates (defaults)
+            mock_api.fetch_as_statement_data.assert_called_once()
+
+    def test_llm_connection_failure_exits(self):
+        """Test exit when LLM server is not available."""
+        args = self._make_args(from_date="2026-01-01", to_date="2026-01-31", account="abc")
+        config = self._make_config()
+        mock_api = MagicMock()
+        mock_api.get_accounts.return_value = [{"accountId": "abc", "accountNumber": "123"}]
+        with patch("src.investec_api.InvestecAPI", return_value=mock_api), \
+             patch("src.main.Database"), \
+             patch("src.main.create_backend"), \
+             patch("src.main.TransactionClassifier") as mock_cls:
+            mock_cls.return_value.check_connection.return_value = False
+            with pytest.raises(SystemExit):
+                cmd_fetch_investec(args, config)
+
+    def test_all_accounts_flag(self):
+        """Test --all fetches all accounts."""
+        args = self._make_args(from_date="2026-01-01", to_date="2026-01-31", all=True)
+        config = self._make_config()
+        from src.parsers.base import StatementData
+        mock_api = MagicMock()
+        mock_api.get_accounts.return_value = [
+            {"accountId": "a", "accountNumber": "1"},
+            {"accountId": "b", "accountNumber": "2"},
+        ]
+        mock_api.fetch_as_statement_data.return_value = StatementData(transactions=[])
+        with patch("src.investec_api.InvestecAPI", return_value=mock_api), \
+             patch("src.main.Database") as mock_db_cls, \
+             patch("src.main.create_backend"), \
+             patch("src.main.TransactionClassifier") as mock_cls:
+            mock_cls.return_value.check_connection.return_value = True
+            mock_db_cls.return_value.statement_exists.return_value = False
+            cmd_fetch_investec(args, config)
+            assert mock_api.fetch_as_statement_data.call_count == 2
+
+    def test_env_vars_override_config(self):
+        """Test environment variables take precedence."""
+        args = self._make_args(list_accounts=True)
+        config = {"investec": {"client_id": "", "client_secret": "", "api_key": ""}, "paths": {"database": ":memory:"}}
+        mock_api = MagicMock()
+        mock_api.get_accounts.return_value = []
+        with patch.dict("os.environ", {"INVESTEC_CLIENT_ID": "env_id", "INVESTEC_CLIENT_SECRET": "env_sec", "INVESTEC_API_KEY": "env_key"}):
+            with patch("src.investec_api.InvestecAPI", return_value=mock_api) as mock_cls:
+                cmd_fetch_investec(args, config)
+                mock_cls.assert_called_once_with("env_id", "env_sec", "env_key")

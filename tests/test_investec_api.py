@@ -191,6 +191,59 @@ class TestFetchAsStatementData:
         assert tx.balance == 3042.00
 
 
+class TestFetchAsStatementDataWithoutAccountNumber:
+    """Tests for fetch_as_statement_data without account_number."""
+
+    def test_fetch_looks_up_account_number(self, api):
+        """Test that account_number is looked up from API when not provided."""
+        api._token = "test_token"
+        api._token_expires_at = time.time() + 600
+
+        mock_accounts_response = MagicMock()
+        mock_accounts_response.status_code = 200
+        mock_accounts_response.json.return_value = {
+            "data": {
+                "accounts": [
+                    {"accountId": "abc123", "accountNumber": "10014670887"},
+                ]
+            }
+        }
+
+        mock_tx_response = MagicMock()
+        mock_tx_response.status_code = 200
+        mock_tx_response.json.return_value = {
+            "data": {"transactions": []}
+        }
+
+        def side_effect(method, url, **kwargs):
+            if "transactions" in url:
+                return mock_tx_response
+            return mock_accounts_response
+
+        with patch.object(api, "_request", side_effect=side_effect):
+            result = api.fetch_as_statement_data("abc123", "2026-01-01", "2026-01-31")
+
+        assert result.account_number == "10014670887"
+
+
+class TestMaxRetriesExhausted:
+    """Test that max retries raises."""
+
+    def test_raises_after_max_retries(self, api):
+        """Test that persistent 500 errors eventually raise."""
+        api._token = "test_token"
+        api._token_expires_at = time.time() + 600
+
+        server_error = MagicMock()
+        server_error.status_code = 500
+        server_error.raise_for_status.side_effect = Exception("500 Server Error")
+
+        with patch.object(api._client, "request", return_value=server_error):
+            with patch("src.investec_api.time.sleep"):
+                with pytest.raises(Exception, match="500"):
+                    api._request("GET", "https://example.com")
+
+
 class TestRetryLogic:
     """Tests for HTTP retry behaviour."""
 

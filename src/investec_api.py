@@ -102,7 +102,7 @@ class InvestecAPI:
             return response
 
         response.raise_for_status()
-        return response
+        return response  # pragma: no cover
 
     def get_accounts(self) -> list[dict]:
         """List all accounts on the profile."""

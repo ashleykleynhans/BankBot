@@ -184,6 +184,68 @@ class TestTransactionParsing:
         assert result[0].amount == -603.00
 
 
+class TestEdgeCases:
+    """Tests for edge cases and error paths."""
+
+    def test_extract_statement_date_invalid_format(self, parser):
+        """Test that invalid date format returns None."""
+        text = "Statement Date 31 Foobar 2026"
+        result = parser._extract_statement_date(text)
+        assert result is None
+
+    def test_derive_statement_number_none(self, parser):
+        """Test derive statement number with None date."""
+        assert parser._derive_statement_number(None) is None
+
+    def test_parse_transaction_line_non_matching(self, parser):
+        """Test that non-matching lines return None."""
+        assert parser._parse_transaction_line("Some random text") is None
+
+    def test_parse_transaction_line_invalid_date(self, parser):
+        """Test that invalid month in transaction line returns None."""
+        line = "13 Foo 2026 13 Foo 2026 TRANSFER FNB 3,544.00 3,544.00"
+        assert parser._parse_transaction_line(line) is None
+
+    def test_parse_transactions_with_empty_lines(self, parser):
+        """Test that empty lines in transaction section are skipped."""
+        text = (
+            "Transaction detail\n"
+            "Posted Date Trans Date Transaction Description Debit Credit Balance\n"
+            "Balance brought forward 0.00\n"
+            "\n"
+            "   \n"
+            "13 Jan 2026 13 Jan 2026 TRANSFER FNB 3,544.00 3,544.00\n"
+            "Closing Balance 3,544.00\n"
+            "Online payments, deposits, fees and interest\n"
+        )
+        result = parser._parse_transactions(text, "2026-01-31")
+        assert len(result) == 1
+
+    def test_signing_with_no_balance(self, parser):
+        """Test that a transaction with no balance defaults to debit."""
+        from unittest.mock import patch
+        from src.parsers.base import Transaction
+
+        no_balance_tx = Transaction(
+            date="2026-01-13", description="TEST", amount=100.0,
+            balance=None, raw_text="test",
+        )
+
+        # Inject a transaction with no balance via mocked _parse_transaction_line
+        text = (
+            "Transaction detail\n"
+            "Posted Date Trans Date Transaction Description Debit Credit Balance\n"
+            "Balance brought forward 0.00\n"
+            "13 Jan 2026 13 Jan 2026 TEST 100.00 100.00\n"
+            "Closing Balance 0.00\n"
+            "Online payments, deposits, fees and interest\n"
+        )
+        with patch.object(parser, "_parse_transaction_line", return_value=no_balance_tx):
+            result = parser._parse_transactions(text, "2026-01-31")
+        assert len(result) == 1
+        assert result[0].amount == -100.0  # defaults to debit
+
+
 class TestFullPDFParsing:
     """Integration test with a real Investec statement PDF."""
 
