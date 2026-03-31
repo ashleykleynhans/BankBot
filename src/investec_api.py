@@ -103,3 +103,59 @@ class InvestecAPI:
 
         response.raise_for_status()
         return response
+
+    def get_accounts(self) -> list[dict]:
+        """List all accounts on the profile."""
+        response = self._request("GET", f"{API_BASE}/accounts")
+        return response.json()["data"]["accounts"]
+
+    def get_transactions(
+        self, account_id: str, from_date: str, to_date: str
+    ) -> list[dict]:
+        """Fetch transactions for an account within a date range."""
+        response = self._request(
+            "GET",
+            f"{API_BASE}/accounts/{account_id}/transactions",
+            params={"fromDate": from_date, "toDate": to_date},
+        )
+        return response.json()["data"]["transactions"]
+
+    def fetch_as_statement_data(
+        self,
+        account_id: str,
+        from_date: str,
+        to_date: str,
+        account_number: str | None = None,
+    ) -> StatementData:
+        """Fetch transactions and convert to StatementData format."""
+        if account_number is None:
+            accounts = self.get_accounts()
+            for acc in accounts:
+                if acc["accountId"] == account_id:
+                    account_number = acc["accountNumber"]
+                    break
+
+        raw_transactions = self.get_transactions(account_id, from_date, to_date)
+
+        transactions = []
+        for tx in raw_transactions:
+            amount = tx["amount"]
+            if tx.get("type") == "DEBIT":
+                amount = -amount
+
+            transactions.append(Transaction(
+                date=tx["transactionDate"],
+                description=tx["description"],
+                amount=amount,
+                balance=tx.get("runningBalance"),
+                raw_text=str(tx),
+            ))
+
+        statement_number = to_date[:7]
+
+        return StatementData(
+            account_number=account_number,
+            statement_date=to_date,
+            statement_number=statement_number,
+            transactions=transactions,
+        )

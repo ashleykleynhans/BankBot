@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from src.investec_api import InvestecAPI
+from src.parsers.base import StatementData
 
 
 @pytest.fixture
@@ -73,3 +74,118 @@ class TestAuthentication:
             api._ensure_authenticated()
 
         assert api._token == "new_token"
+
+
+class TestGetAccounts:
+    """Tests for listing accounts."""
+
+    def test_get_accounts(self, api):
+        """Test fetching accounts list."""
+        api._token = "test_token"
+        api._token_expires_at = time.time() + 600
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": {
+                "accounts": [
+                    {
+                        "accountId": "abc123",
+                        "accountNumber": "10014670887",
+                        "accountName": "Private Bank Account",
+                        "referenceName": "My Account",
+                        "productName": "Private Bank Account",
+                    }
+                ]
+            }
+        }
+
+        with patch.object(api, "_request", return_value=mock_response):
+            accounts = api.get_accounts()
+
+        assert len(accounts) == 1
+        assert accounts[0]["accountId"] == "abc123"
+        assert accounts[0]["accountNumber"] == "10014670887"
+
+
+class TestGetTransactions:
+    """Tests for fetching transactions."""
+
+    def test_get_transactions(self, api):
+        """Test fetching transactions for an account."""
+        api._token = "test_token"
+        api._token_expires_at = time.time() + 600
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": {
+                "transactions": [
+                    {
+                        "accountId": "abc123",
+                        "type": "DEBIT",
+                        "description": "KEANU PAYMENT",
+                        "transactionDate": "2026-01-13",
+                        "amount": 502.00,
+                        "runningBalance": 3042.00,
+                    },
+                    {
+                        "accountId": "abc123",
+                        "type": "CREDIT",
+                        "description": "TRANSFER FNB",
+                        "transactionDate": "2026-01-13",
+                        "amount": 3544.00,
+                        "runningBalance": 3544.00,
+                    },
+                ]
+            }
+        }
+
+        with patch.object(api, "_request", return_value=mock_response):
+            transactions = api.get_transactions("abc123", "2026-01-01", "2026-01-31")
+
+        assert len(transactions) == 2
+        assert transactions[0]["description"] == "KEANU PAYMENT"
+
+
+class TestFetchAsStatementData:
+    """Tests for converting API response to StatementData."""
+
+    def test_fetch_as_statement_data(self, api):
+        """Test conversion to StatementData format."""
+        api._token = "test_token"
+        api._token_expires_at = time.time() + 600
+
+        mock_tx_response = MagicMock()
+        mock_tx_response.status_code = 200
+        mock_tx_response.json.return_value = {
+            "data": {
+                "transactions": [
+                    {
+                        "accountId": "abc123",
+                        "type": "DEBIT",
+                        "description": "KEANU PAYMENT",
+                        "transactionDate": "2026-01-13",
+                        "amount": 502.00,
+                        "runningBalance": 3042.00,
+                    },
+                ]
+            }
+        }
+
+        with patch.object(api, "_request", return_value=mock_tx_response):
+            result = api.fetch_as_statement_data(
+                "abc123", "2026-01-01", "2026-01-31", account_number="10014670887"
+            )
+
+        assert isinstance(result, StatementData)
+        assert result.account_number == "10014670887"
+        assert result.statement_date == "2026-01-31"
+        assert result.statement_number == "2026-01"
+        assert len(result.transactions) == 1
+
+        tx = result.transactions[0]
+        assert tx.date == "2026-01-13"
+        assert tx.description == "KEANU PAYMENT"
+        assert tx.amount == -502.00
+        assert tx.balance == 3042.00
