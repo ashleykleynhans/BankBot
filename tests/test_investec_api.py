@@ -189,3 +189,65 @@ class TestFetchAsStatementData:
         assert tx.description == "KEANU PAYMENT"
         assert tx.amount == -502.00
         assert tx.balance == 3042.00
+
+
+class TestRetryLogic:
+    """Tests for HTTP retry behaviour."""
+
+    def test_retry_on_429(self, api):
+        """Test that 429 responses honour Retry-After and retry."""
+        api._token = "test_token"
+        api._token_expires_at = time.time() + 600
+
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+        rate_limited.headers = {"Retry-After": "1"}
+
+        success = MagicMock()
+        success.status_code = 200
+        success.raise_for_status = MagicMock()
+
+        with patch.object(api._client, "request", side_effect=[rate_limited, success]):
+            with patch("src.investec_api.time.sleep") as mock_sleep:
+                result = api._request("GET", "https://example.com")
+                mock_sleep.assert_called_once_with(1)
+
+        assert result == success
+
+    def test_retry_on_500(self, api):
+        """Test exponential backoff on 5xx errors."""
+        api._token = "test_token"
+        api._token_expires_at = time.time() + 600
+
+        server_error = MagicMock()
+        server_error.status_code = 500
+
+        success = MagicMock()
+        success.status_code = 200
+        success.raise_for_status = MagicMock()
+
+        with patch.object(api._client, "request", side_effect=[server_error, success]):
+            with patch("src.investec_api.time.sleep") as mock_sleep:
+                result = api._request("GET", "https://example.com")
+                mock_sleep.assert_called_once_with(1)
+
+        assert result == success
+
+    def test_retry_on_401_refreshes_token(self, api):
+        """Test that 401 triggers token refresh and retry."""
+        api._token = "old_token"
+        api._token_expires_at = time.time() + 600
+
+        unauthorized = MagicMock()
+        unauthorized.status_code = 401
+
+        success = MagicMock()
+        success.status_code = 200
+        success.raise_for_status = MagicMock()
+
+        with patch.object(api._client, "request", side_effect=[unauthorized, success]):
+            with patch.object(api, "authenticate") as mock_auth:
+                result = api._request("GET", "https://example.com")
+                mock_auth.assert_called_once()
+
+        assert result == success
