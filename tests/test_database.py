@@ -474,3 +474,38 @@ class TestUpdateStatementsBank:
 
         updated = db.update_statements_bank("capitec")
         assert updated == 0
+
+
+class TestTransactionDeduplication:
+    """Tests for transaction deduplication."""
+
+    def test_transaction_exists(self, db):
+        """Test checking if a transaction already exists."""
+        stmt_id = db.insert_statement(
+            filename="test.pdf",
+            bank="investec",
+            account_number="10014670887",
+        )
+        db.insert_transaction(
+            statement_id=stmt_id,
+            date="2026-01-13",
+            description="KEANU PAYMENT",
+            amount=502.00,
+            transaction_type="debit",
+        )
+
+        assert db.transaction_exists(
+            account_number="10014670887",
+            date="2026-01-13",
+            description="KEANU PAYMENT",
+            amount=502.00,
+        )
+
+    def test_transaction_not_exists(self, db):
+        """Test that non-existent transaction returns False."""
+        assert not db.transaction_exists(
+            account_number="10014670887",
+            date="2026-01-13",
+            description="KEANU PAYMENT",
+            amount=502.00,
+        )

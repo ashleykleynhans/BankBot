@@ -423,6 +423,32 @@ class Database:
             cursor = conn.execute("DELETE FROM budgets")
             return cursor.rowcount
 
+    def transaction_exists(
+        self,
+        account_number: str,
+        date: str,
+        description: str,
+        amount: float,
+    ) -> bool:
+        """Check if a transaction already exists for deduplication.
+
+        Matches on account number, date, description, and amount.
+        Used when importing from the Investec API to prevent duplicates
+        from overlapping date ranges.
+        """
+        with self._get_connection() as conn:
+            result = conn.execute(
+                """SELECT 1 FROM transactions t
+                   JOIN statements s ON t.statement_id = s.id
+                   WHERE s.account_number = ?
+                     AND t.date = ?
+                     AND t.description = ?
+                     AND t.amount = ?
+                   LIMIT 1""",
+                (account_number, date, description, amount),
+            ).fetchone()
+            return result is not None
+
     def update_statements_bank(self, bank: str) -> int:
         """Update bank for all statements that have NULL bank.
 
