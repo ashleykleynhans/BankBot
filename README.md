@@ -6,7 +6,8 @@ modern web UI or CLI chat interface. All data stays on your machine.
 
 ## Supported Banks
 
-- [FNB](https://www.fnb.co.za/) (First National Bank)
+- [FNB](https://www.fnb.co.za/) (First National Bank) - PDF parsing
+- [Investec](https://www.investec.com/) Private Bank - PDF parsing + [Programmable Banking API](https://developer.investec.com/)
 
 Want to add support for another bank? See [Adding Support for New Banks](
 #adding-support-for-new-banks).
@@ -18,7 +19,8 @@ Want to add support for another bank? See [Adding Support for New Banks](
 
 ## Features
 
-- **PDF Parsing**: Extract transactions from bank statement PDFs
+- **PDF Parsing**: Extract transactions from FNB and Investec bank statement PDFs
+- **Investec API**: Fetch transactions directly from the Investec Programmable Banking API
 - **Auto-Classification**: Uses local LLM to categorize transactions (doctor, groceries, utilities, etc.)
 - **Chat Interface**: Ask natural language questions about your spending
 - **REST + WebSocket API**: Integrate with frontend applications
@@ -160,6 +162,14 @@ bankbot reimport statements/288_Nov_2025.pdf
 # Re-import all statements
 bankbot reimport --all
 
+# Import Investec PDF statements
+bankbot import --bank investec --path ~/path/to/investec/statements/
+
+# Fetch transactions from Investec API
+bankbot fetch-investec --from-date 2026-01-01 --to-date 2026-01-31
+bankbot fetch-investec --list-accounts
+bankbot fetch-investec --all              # Fetch all accounts
+
 # Export budgets to JSON or YAML
 bankbot export-budget budgets.json
 bankbot export-budget budgets.yaml
@@ -223,12 +233,33 @@ class StandardBankParser(BaseBankParser):
    bank: standardbank
    ```
 
+## Investec API Setup
+
+To fetch transactions directly from the Investec Programmable Banking API:
+
+1. Enrol for [Programmable Banking](https://developer.investec.com/) on the Investec website
+2. Configure credentials in `config.yaml` or via environment variables:
+
+```yaml
+investec:
+  client_id: "your_client_id"
+  client_secret: "your_client_secret"
+  api_key: "your_api_key"
+```
+
+Or set environment variables (these take precedence over config):
+```bash
+export INVESTEC_CLIENT_ID="your_client_id"
+export INVESTEC_CLIENT_SECRET="your_client_secret"
+export INVESTEC_API_KEY="your_api_key"
+```
+
 ## Configuration
 
 Edit `config.yaml` to customize:
 
 ```yaml
-# Bank parser to use
+# Bank parser to use (fnb or investec)
 bank: fnb
 
 # LLM settings
@@ -396,9 +427,11 @@ BankBot/
 │   │       ├── analytics.py   # Analytics endpoints
 │   │       ├── budgets.py     # Budget CRUD
 │   │       └── chat.py        # WebSocket chat
+│   ├── investec_api.py  # Investec Programmable Banking API client
 │   └── parsers/
 │       ├── base.py      # Base parser class
 │       ├── fnb.py       # FNB parser
+│       ├── investec.py  # Investec parser
 │       └── __init__.py  # Parser registry
 ├── frontend/             # Svelte web frontend
 │   ├── src/
