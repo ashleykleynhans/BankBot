@@ -464,4 +464,4 @@ The `statements/` and `data/` directories are gitignored by default.
 
 ## License
 
-GPLv3
+Apache License 2.0
