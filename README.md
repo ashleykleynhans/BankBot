@@ -17,6 +17,24 @@ Want to add support for another bank? See [Adding Support for New Banks](
 > not deploy to cloud services or expose to the internet. Your bank statements
 > contain personal information that should never leave your machine.
 
+> [!IMPORTANT]
+> **DISCLAIMER**
+>
+> BankBot is an independent, open-source project. It is **not affiliated with,
+> endorsed by, or sponsored by** FNB, Investec, or any other financial
+> institution. All bank names, logos, and trademarks are the property of their
+> respective owners and are referenced only for interoperability.
+>
+> Transaction classifications, totals, and chat responses are produced by a
+> local language model and **may be inaccurate, incomplete, or out of date**.
+> Nothing in this tool constitutes financial, tax, accounting, or legal advice.
+> Always verify figures against your official bank statements before making
+> any financial decision.
+>
+> This software is provided "as is", without warranty of any kind. You assume
+> all risk associated with its use, including but not limited to data loss,
+> misclassification, and reliance on any generated output.
+
 ## Features
 
 - **PDF Parsing**: Extract transactions from FNB and Investec bank statement PDFs
