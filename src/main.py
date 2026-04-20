@@ -510,6 +510,23 @@ def cmd_fetch_investec(args: argparse.Namespace, config: dict) -> None:
 
     api = InvestecAPI(client_id, client_secret, api_key)
 
+    # Load the LLM before authenticating: the Investec access token has a short
+    # TTL, and a cold MLX model load (first run downloads several GB) can burn
+    # enough of it to expire the token before classification runs.
+    db = None
+    classifier = None
+    if not args.list_accounts:
+        db = Database(config["paths"]["database"])
+        backend = create_backend(config)
+        classifier = TransactionClassifier(
+            backend=backend,
+            categories=config.get("categories"),
+            classification_rules=config.get("classification_rules"),
+        )
+        if not classifier.check_connection():
+            console.print("[red]Cannot connect to LLM server[/red]")
+            sys.exit(1)
+
     try:
         api.authenticate()
         console.print("[green]Authenticated with Investec API[/green]")
@@ -557,19 +574,6 @@ def cmd_fetch_investec(args: argparse.Namespace, config: dict) -> None:
         console.print("[yellow]Multiple accounts found. Specify --account <id> or --all[/yellow]")
         for acc in accounts:
             console.print(f"  {acc['accountId']} - {acc.get('accountNumber', '')} ({acc.get('referenceName', '')})")
-        sys.exit(1)
-
-    # Set up classification pipeline
-    db = Database(config["paths"]["database"])
-    backend = create_backend(config)
-    classifier = TransactionClassifier(
-        backend=backend,
-        categories=config.get("categories"),
-        classification_rules=config.get("classification_rules"),
-    )
-
-    if not classifier.check_connection():
-        console.print("[red]Cannot connect to LLM server[/red]")
         sys.exit(1)
 
     for account_id in account_ids:

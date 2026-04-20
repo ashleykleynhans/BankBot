@@ -1475,7 +1475,11 @@ class TestCmdFetchInvestec:
         """Test exit when authentication fails."""
         args = self._make_args()
         config = self._make_config()
-        with patch("src.investec_api.InvestecAPI.authenticate", side_effect=Exception("fail")):
+        with patch("src.investec_api.InvestecAPI.authenticate", side_effect=Exception("fail")), \
+             patch("src.main.Database"), \
+             patch("src.main.create_backend"), \
+             patch("src.main.TransactionClassifier") as mock_cls:
+            mock_cls.return_value.check_connection.return_value = True
             with pytest.raises(SystemExit):
                 cmd_fetch_investec(args, config)
 
