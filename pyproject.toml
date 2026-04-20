@@ -28,7 +28,7 @@ test = [
     "pytest-cov>=4.0.0",
 ]
 mlx = [
-    "mlx-lm>=0.30.5",
+    "mlx-lm>=0.31.2",
 ]
 
 [project.scripts]
