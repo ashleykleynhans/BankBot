@@ -63,3 +63,6 @@ Thumbs.db
 node_modules/
 frontend/dist/
 frontend/.vite/
+
+# Config - make sure Investec API keys are protected!
+config.yaml

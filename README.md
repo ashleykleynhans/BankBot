@@ -69,6 +69,20 @@ pip install -e ".[mlx,test]"
 
 ## Setup
 
+### Configuration
+
+Copy the example config to create your local `config.yaml`:
+
+```bash
+cp config.yaml.example config.yaml
+```
+
+`config.yaml` is gitignored so your credentials stay out of the repo. Edit it to
+set your bank, LLM backend, and (if using Investec API) your client ID, client
+secret, and API key. Investec credentials can also be supplied via the
+`INVESTEC_CLIENT_ID`, `INVESTEC_CLIENT_SECRET`, and `INVESTEC_API_KEY`
+environment variables.
+
 ### Option A: MLX Backend (Apple Silicon - Recommended)
 
 No external server required. The model runs directly on your Mac using MLX.
