@@ -600,8 +600,13 @@ Query: {query}"""
         stats = self.db.get_stats()
         query_lower = query.lower()
         is_budget_query = "budget" in query_lower
-        # Skip totals for "when last" type queries - they only want the most recent
-        is_when_last_query = "when last" in query_lower or "last time" in query_lower
+        # "When last did I pay X", "last time I paid X", "when did I pay X" all want
+        # the most recent match. Exclude "first" to avoid misfiring on "when did I first".
+        q_words_set = set(query_lower.split())
+        is_when_last_query = (
+            ("when" in q_words_set and "first" not in q_words_set)
+            or "last time" in query_lower
+        )
         is_price_change_query = "price" in query_lower and ("increase" in query_lower or "change" in query_lower or "go up" in query_lower)
 
         # For non-budget queries with no transactions, return early
@@ -685,6 +690,22 @@ Query: {query}"""
             # Sort by date (newest first) for display
             sorted_txs = sorted(transactions, key=lambda x: x.get("date", ""), reverse=True)
 
+            # Pre-compute the most-recent payment for "when" queries so small
+            # models don't have to infer list order.
+            if is_when_last_query:
+                non_fee = [t for t in sorted_txs if t.get("category") != "fees"]
+                if non_fee:
+                    top = non_fee[0]
+                    top_bank = (top.get("bank") or "").upper()
+                    marker = (
+                        f"\n>>> MOST RECENT PAYMENT: R{abs(top.get('amount', 0)):,.2f} "
+                        f"on {top.get('date')}"
+                    )
+                    if top_bank:
+                        marker += f" ({top_bank})"
+                    marker += " <<<"
+                    context_parts.append(marker)
+
             # Count debits and credits
             debit_count = sum(1 for tx in sorted_txs[:15] if tx.get("transaction_type") == "debit")
             credit_count = sum(1 for tx in sorted_txs[:15] if tx.get("transaction_type") == "credit")
@@ -743,6 +764,7 @@ When answering questions about spending or transactions:
 - Give a concise summary with the total amount
 - For yes/no questions like "Did I pay X?" or "Have I paid X?", start with yes/no then include the date, amount, and bank: "Yes, you paid Paul R500.00 on 15 January 2025 (FNB)."
 - For "when" questions like "When last did I pay X?" or "When did I pay X?", answer with the date directly: "You last paid Paul R500.00 on 15 January 2025 (FNB)." Do NOT start with "Yes".
+- If the context contains ">>> MOST RECENT PAYMENT: R{{amt}} on {{date}} ({{BANK}}) <<<", COPY that exact amount, date and bank into your answer; do NOT pick any other transaction from the list.
 - Always include the bank name in parentheses at the end of transaction details when available (e.g., "FNB", "CAPITEC")
 - Always format dates as "15 January 2025" (day month year), NEVER as "2025-01-15"
 - For single transactions, always mention the date and amount

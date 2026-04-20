@@ -398,6 +398,45 @@ class TestBuildContext:
         assert "TOTAL SPENT" not in context
         assert "TOTAL RECEIVED" not in context
 
+    def test_build_context_most_recent_marker_with_bank(self, chat, mock_db):
+        """'When' query with a bank on the most-recent transaction includes
+        the bank in the MOST RECENT PAYMENT marker."""
+        transactions = [
+            {"date": "2023-12-27", "description": "Crazy Store", "amount": 639.95,
+             "category": "other", "transaction_type": "debit", "bank": "fnb"},
+            {"date": "2026-04-15", "description": "Crazy Store", "amount": 339.96,
+             "category": "other", "transaction_type": "debit", "bank": "investec"},
+        ]
+
+        context = chat._build_context(transactions, "when did I pay crazy store")
+
+        assert ">>> MOST RECENT PAYMENT: R339.96 on 2026-04-15 (INVESTEC) <<<" in context
+
+    def test_build_context_most_recent_marker_without_bank(self, chat, mock_db):
+        """MOST RECENT PAYMENT marker omits the bank parenthetical when absent."""
+        transactions = [
+            {"date": "2026-04-15", "description": "Crazy Store", "amount": 339.96,
+             "category": "other", "transaction_type": "debit"},
+        ]
+
+        context = chat._build_context(transactions, "when did I pay crazy store")
+
+        assert ">>> MOST RECENT PAYMENT: R339.96 on 2026-04-15 <<<" in context
+        assert "()" not in context
+
+    def test_build_context_most_recent_skips_fees(self, chat, mock_db):
+        """Fee transactions must not be chosen as the most-recent payment."""
+        transactions = [
+            {"date": "2026-04-20", "description": "Monthly Fee", "amount": 10.0,
+             "category": "fees", "transaction_type": "debit", "bank": "fnb"},
+            {"date": "2026-04-15", "description": "Crazy Store", "amount": 339.96,
+             "category": "other", "transaction_type": "debit", "bank": "investec"},
+        ]
+
+        context = chat._build_context(transactions, "when did I pay crazy store")
+
+        assert ">>> MOST RECENT PAYMENT: R339.96 on 2026-04-15 (INVESTEC) <<<" in context
+
     def test_build_context_price_increase_query(self, chat, mock_db):
         """Test price change query includes detected price change."""
         transactions = [
