@@ -168,7 +168,11 @@ bankbot import --bank investec --path ~/path/to/investec/statements/
 # Fetch transactions from Investec API
 bankbot fetch-investec --from-date 2026-01-01 --to-date 2026-01-31
 bankbot fetch-investec --list-accounts
-bankbot fetch-investec --all              # Fetch all accounts
+bankbot fetch-investec --all              # Fetch all accounts (current month)
+
+# Fetch a multi-month range for all accounts (API serves ~180 days of history).
+# Existing transactions are skipped via per-transaction dedup, so re-running is safe.
+bankbot fetch-investec --all --from-date 2025-10-01 --to-date 2026-04-20
 
 # Export budgets to JSON or YAML
 bankbot export-budget budgets.json
