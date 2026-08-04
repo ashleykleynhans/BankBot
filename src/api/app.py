@@ -15,6 +15,14 @@ from ..llm_backend import create_backend
 from .routers import analytics, budgets, chat, stats, transactions
 from .session import session_manager
 
+# Browser origins allowed to call the API and open the chat WebSocket.
+# The API has no authentication, so anything else is rejected to prevent
+# arbitrary websites from reading financial data cross-origin.
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -57,11 +65,13 @@ def create_app() -> FastAPI:
     # CORS configuration for browser clients
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Configure appropriately for production
-        allow_credentials=True,
+        allow_origins=ALLOWED_ORIGINS,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Shared with the WebSocket router for Origin validation
+    app.state.allowed_origins = ALLOWED_ORIGINS
 
     # Include routers
     app.include_router(chat.router, prefix="/ws", tags=["chat"])

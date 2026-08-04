@@ -31,6 +31,14 @@ async def websocket_chat(websocket: WebSocket) -> None:
             {"type": "error", "payload": {"code": "...", "message": "..."}}
             {"type": "pong"}
     """
+    # Reject browser connections from disallowed origins. Non-browser clients
+    # (CLI, scripts) don't send an Origin header and are allowed through.
+    origin = websocket.headers.get("origin")
+    allowed_origins = getattr(websocket.app.state, "allowed_origins", [])
+    if origin is not None and origin not in allowed_origins:
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
 
     # Get shared resources from app state

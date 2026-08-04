@@ -458,6 +458,45 @@ class TestWebSocketChat:
                 assert data["payload"]["session_id"] == "test-session-id"
                 assert "stats" in data["payload"]
 
+    def test_websocket_allows_configured_origin(self, client, mock_db, mock_config):
+        """Test WebSocket connection from an allowed browser origin."""
+        with patch('src.api.routers.chat.session_manager') as mock_manager:
+            mock_session = Mock()
+            mock_session.session_id = "test-session-id"
+            mock_manager.create_session.return_value = mock_session
+
+            with client.websocket_connect(
+                "/ws/chat", headers={"origin": "http://localhost:5173"}
+            ) as websocket:
+                data = websocket.receive_json()
+                assert data["type"] == "connected"
+
+    def test_websocket_rejects_disallowed_origin(self, client, mock_db, mock_config):
+        """Test WebSocket connections from unknown browser origins are closed."""
+        from starlette.websockets import WebSocketDisconnect
+
+        with patch('src.api.routers.chat.session_manager') as mock_manager:
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                with client.websocket_connect(
+                    "/ws/chat", headers={"origin": "http://evil.example.com"}
+                ) as websocket:
+                    websocket.receive_json()
+
+            assert exc_info.value.code == 1008
+            mock_manager.create_session.assert_not_called()
+
+    def test_cors_allows_configured_origin(self, client):
+        """Test CORS headers are set for allowed origins."""
+        response = client.get("/health", headers={"origin": "http://localhost:5173"})
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+    def test_cors_blocks_unknown_origin(self, client):
+        """Test CORS headers are not set for unknown origins."""
+        response = client.get("/health", headers={"origin": "http://evil.example.com"})
+        assert response.status_code == 200
+        assert "access-control-allow-origin" not in response.headers
+
     def test_websocket_connect_missing_tables(self, client, mock_db, mock_config):
         """Test WebSocket connection when DB tables don't exist."""
         mock_db.get_stats.side_effect = sqlite3.OperationalError("no such table: statements")

@@ -215,8 +215,14 @@ bankbot import-budget budgets.json
 
 # Start API server (REST + WebSocket)
 bankbot serve
-bankbot serve --host 0.0.0.0 --port 3000
+bankbot serve --port 3000
 ```
+
+> [!WARNING]
+> The API has **no authentication**. `bankbot serve` binds to `127.0.0.1`
+> (your machine only) by design. Do **not** use `--host 0.0.0.0`: that
+> exposes your full financial data, chat, and budget write endpoints to
+> everyone on your network.
 
 ## Re-importing Statements
 

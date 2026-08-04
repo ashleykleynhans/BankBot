@@ -189,11 +189,13 @@ class Database:
             JOIN statements s ON t.statement_id = s.id
             ORDER BY t.date DESC
         """
+        params: tuple = ()
         if limit:
-            query += f" LIMIT {limit} OFFSET {offset}"
+            query += " LIMIT ? OFFSET ?"
+            params = (limit, offset)
 
         with self._get_connection() as conn:
-            rows = conn.execute(query).fetchall()
+            rows = conn.execute(query, params).fetchall()
             return [dict(row) for row in rows]
 
     def get_transactions_by_category(self, category: str) -> list[dict]:
@@ -224,15 +226,19 @@ class Database:
 
     def search_transactions(self, search_term: str) -> list[dict]:
         """Search transactions by description or recipient."""
+        # Escape LIKE wildcards so the term is matched literally
+        escaped = (
+            search_term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
         with self._get_connection() as conn:
             rows = conn.execute(
                 """SELECT t.*, s.filename, s.bank, s.account_number, s.statement_number
-                   FROM transactions t
-                   JOIN statements s ON t.statement_id = s.id
-                   WHERE t.description LIKE ?
-                      OR t.recipient_or_payer LIKE ?
-                   ORDER BY t.date DESC""",
-                (f"%{search_term}%", f"%{search_term}%")
+                    FROM transactions t
+                    JOIN statements s ON t.statement_id = s.id
+                    WHERE t.description LIKE ? ESCAPE '\\'
+                       OR t.recipient_or_payer LIKE ? ESCAPE '\\'
+                    ORDER BY t.date DESC""",
+                (f"%{escaped}%", f"%{escaped}%")
             ).fetchall()
             return [dict(row) for row in rows]
 

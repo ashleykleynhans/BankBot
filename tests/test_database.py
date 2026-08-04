@@ -204,6 +204,19 @@ class TestTransactions:
         results = db_with_data.search_transactions("woolworths")
         assert len(results) == 1
 
+    def test_search_transactions_escapes_wildcards(self, db):
+        """Test LIKE wildcards in search terms are matched literally."""
+        stmt_id = db.insert_statement("test.pdf")
+        db.insert_transaction(stmt_id, "2025-01-15", "PAYPAL_WITHDRAWAL", 100)
+        db.insert_transaction(stmt_id, "2025-01-16", "PAYPALXWITHDRAWAL", 200)
+
+        results = db.search_transactions("PAYPAL_WITHDRAWAL")
+        assert len(results) == 1
+        assert results[0]["description"] == "PAYPAL_WITHDRAWAL"
+
+        results = db.search_transactions("%")
+        assert len(results) == 0
+
     def test_get_transactions_in_date_range(self, db_with_data):
         """Test getting transactions by date range."""
         results = db_with_data.get_transactions_in_date_range(
