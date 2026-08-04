@@ -1,7 +1,7 @@
 # Bank Statement Chat Bot Configuration
 
 # Bank configuration
-bank: fnb                    # Options: fnb, investec
+bank: fnb # Options: fnb, investec
 
 # PDF password (if your bank statements are password-protected)
 # pdf_password: your_password_here
@@ -16,10 +16,10 @@ investec:
 
 # LLM settings (OpenAI-compatible API, e.g., LM Studio)
 llm:
-  backend: openai                             # Use "openai" for LM Studio, "mlx" for local MLX
+  backend: mlx # Use "openai" for LM Studio, "mlx" for local MLX
   host: localhost
-  port: 1234                                  # LM Studio default port
-  model: mistralai/ministral-3-14b-reasoning  # Model for classification and chat
+  port: 1234 # LM Studio default port (unused with mlx backend)
+  model: mlx-community/Qwen3-14B-4bit # Model for classification and chat
 
 # Paths
 paths:
@@ -50,6 +50,7 @@ categories:
   - home_maintenance
   - import_duties
   - insurance
+  - interest
   - internet
   - lotto
   - medical
@@ -58,6 +59,7 @@ categories:
   - optician
   - other
   - parking
+  - payment_plans
   - plumbing
   - restaurants
   - reversal
@@ -89,12 +91,20 @@ categories:
 classification_rules:
   # Investec transfers
   "TRANSFER FNB": transfer
-  "Credit Card 10014670171": transfer
+  "Credit Card": transfer
 
   # Investec-specific
-  "KEANU SAVINGS": savings
+  "CHANEL SAVINGS": savings
+  "CURRENT ACCOUNT": transfer
+  "HYLTON PAYMENT": eft_payment
+  "KEANU KARATE LESSONS": eft_payment
   "KEANU PAYMENT": eft_payment
+  "KEANU PHOTOS": eft_payment
+  "KEANU SAVINGS": savings
   "Keanu Tiny Tacklers": rugby_lessons
+  "LITTLE READERS": education
+  "Payshapid": eft_payment
+  "POINTS-TO-CASH": other
   "Tots In Teams": eft_payment
 
   # Withdrawals
@@ -107,9 +117,11 @@ classification_rules:
   "AccountFee": fees
   "AddedServFees": fees
   "Bank fee": fees
+  "CROSS-BORDER CARD FEE": fees
   "Fees PymtFee": fees
   "Service Fee": fees
   "Monthly Fee": fees
+  "MONTHLY SERVICE CHARGE": fees
   "Paypal Withdrawal Fee": fees
 
   # Deposits
@@ -208,6 +220,7 @@ classification_rules:
   # Hardware
   "Builders": hardware
   "Hardware": hardware
+  "LEROY MERLIN": hardware
 
   # Home Maintenance
   "Ceiling Repairs": home_maintenance
@@ -224,16 +237,22 @@ classification_rules:
   "Allport Cargo": import_duties
   "Buffalo Internation": import_duties
   "Linex Air Services": import_duties
+  "MEILI LOGISTICS": import_duties
   "Purchase Allports": import_duties
 
   # Insurance (check before other)
+  "AON SA": insurance
   "Outsurance": insurance
   "Cap Legac": insurance
   "Old Mutual": insurance
   "Oldmutcol": insurance
   "Sanlam": insurance
+  "Santam": insurance
   "Discovery": insurance
   "Liberty": insurance
+
+  # Interest
+  "CREDIT INTEREST": interest
 
   # Internet
   "Afrihost": internet
@@ -254,7 +273,6 @@ classification_rules:
   # Medical (check before eft_payment)
   "Cardiologist": medical
   "Circumcision": medical
-  "Clicks": medical
   "Ct Scan": medical
   "Dentist": medical
   "Dis-Chem": medical
@@ -277,12 +295,14 @@ classification_rules:
   "Ekurhul*Online": municipal
 
   # Online Shopping
+  "ALIEXPRESS": online_shopping
   "Takealot": online_shopping
   "Takealo*T": online_shopping
   "Amazon": online_shopping
   "Loot": online_shopping
   "Temu": online_shopping
   "*Temu Com": online_shopping
+  "YUPPIECHEF": online_shopping
 
   # Optician
   "Optical": optician
@@ -292,8 +312,12 @@ classification_rules:
 
   # Parking
   "Acsa": parking
+  "ADMYT PARKING": parking
   "Mall Of The South": parking
   "Parking": parking
+
+  # Payment Plans
+  "PAYFLEX": payment_plans
 
   # Plumbing
   "Plumbing": plumbing
@@ -311,7 +335,7 @@ classification_rules:
   "Wimpy": restaurants
 
   # Reversals
-  "#Rev Ewa": reversal          # Reversal of ewallet fee
+  "#Rev Ewa": reversal # Reversal of ewallet fee
   "Magtape Unpaid": reversal
   "Send Reversal": reversal
 
@@ -322,6 +346,7 @@ classification_rules:
   "Runpod": deposit
   "3 Commas": salary
   "3Commassalary": salary
+  "PAYROLL": salary
   "Salary Payment": salary
   "Three Commas": salary
 
@@ -346,7 +371,7 @@ classification_rules:
   "DSTV": subscriptions
   "Esp Eskomsep": subscriptions
   "Google One": subscriptions
-  "Google *Google Stor": subscriptions
+  "Google *": subscriptions
   "Linkedinprea": subscriptions
   "Microsoft*": subscriptions
   "Paddle.Net* Put.Io": subscriptions
@@ -356,7 +381,9 @@ classification_rules:
   "*Truecaller": subscriptions
   "Truecaller": subscriptions
   "WWW.F1.COM": subscriptions
+  "X CORP": subscriptions
   "Xtra Savings": subscriptions
+  "YOUTUBEPREMIUM": subscriptions
 
   # Swimming Lessons
   "Swimming": swimming_lessons
@@ -401,6 +428,7 @@ classification_rules:
   "Netstar": vehicle_tracking
 
   # Fuel
+  "ENGEN BRACKENVIEW": Fuel
   "Fuel Purchase": fuel
 
   # Vehicle Maintenance
@@ -430,6 +458,7 @@ classification_rules:
   "Scaleway": other
   "Scw*": other
   "Sogo Homes": other
+  "TASKO SWEETS": other
 
   # Geo Payments
   "Geo Payment": geo_payment
