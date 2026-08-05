@@ -292,6 +292,26 @@ class TestTypoCorrection:
         assert "Spotify" in response
         assert "increased" in response
 
+    def test_ceiling_query_not_treated_as_follow_up(self, chat, mock_db):
+        """'how much paid on ceiling' must not reuse the previous query's data."""
+        chat._last_transactions = [
+            {"date": "2024-07-20", "description": "FNB App Payment To Paul",
+             "amount": -560.00, "category": "eft_payment", "transaction_type": "debit"},
+        ]
+        chat._last_search_query = "when did i pay paul"
+
+        mock_db.get_transactions_by_category.return_value = [
+            {"date": "2025-06-03", "description": "FNB App Payment To Ceiling Repairs 10391 Kleynhans",
+             "amount": -9460.84, "category": "home_maintenance", "transaction_type": "debit"},
+            {"date": "2025-05-23", "description": "FNB App Payment To Ceiling Repairs 10391 Kleynhans",
+             "amount": -17570.14, "category": "home_maintenance", "transaction_type": "debit"},
+        ]
+
+        response, transactions, _ = chat.ask("how much paid on ceiling")
+
+        assert len(transactions) == 2
+        assert all(tx["category"] == "home_maintenance" for tx in transactions)
+
     def test_metaflix_corrected_to_netflix_via_arrow(self, chat, mock_db):
         """'How much did I spent on Metaflix?' should correct to Netflix."""
         # LLM returns "Metaflix -> Netflix" format

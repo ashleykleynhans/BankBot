@@ -1082,6 +1082,13 @@ class TestFollowUpDetection:
         assert chat._is_follow_up_query("when did sportify price increase") is False
         assert chat._is_follow_up_query("when did netflix price increase") is False
 
+    def test_lowercase_recipient_query_not_follow_up(self, mock_db):
+        """Test lowercase 'paid <name>' queries are not follow-ups."""
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        assert chat._is_follow_up_query("when did i pay paul") is False
+        assert chat._is_follow_up_query("how much paid on ceiling") is False
+        assert chat._is_follow_up_query("how much did i pay") is True
+
 
 class TestFollowUpContext:
     """Tests for follow-up query context handling."""

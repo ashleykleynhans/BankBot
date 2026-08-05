@@ -50,6 +50,45 @@ def _mentions_known_brand(query_lower: str) -> bool:
     return any(_match_known_brand(word) for word in re.findall(r"\b\w+\b", query_lower))
 
 
+CATEGORY_SYNONYMS = {
+    "saved": "savings",
+    "save": "savings",
+    "petrol": "fuel",
+    "gas": "fuel",
+    "medical aid": "medical",
+    "flowers": "florist",
+    "flower": "florist",
+}
+
+DESCRIPTION_FILTER_SYNONYMS = {
+    "roof": "home_maintenance",
+    "ceiling": "home_maintenance",
+    "electrician": "home_maintenance",
+    "plumber": "home_maintenance",
+    "garage": "home_maintenance",
+    "pool": "home_maintenance",
+    "fence": "home_maintenance",
+}
+
+PAY_RECIPIENT_STOP_WORDS = {
+    "for", "to", "the", "a", "an", "on", "in", "it", "them",
+    "this", "that", "my", "me", "into",
+}
+
+
+def _mentions_known_synonym(query_lower: str) -> bool:
+    """Check if a query mentions a known search synonym (e.g. 'ceiling')."""
+    return any(s in query_lower for s in CATEGORY_SYNONYMS) or any(
+        s in query_lower for s in DESCRIPTION_FILTER_SYNONYMS
+    )
+
+
+def _pay_recipient(query_lower: str) -> bool:
+    """Check if a query names a pay/paid recipient (e.g. 'paid paul')."""
+    match = re.search(r"\b(?:pay|paid)\s+([a-z]+)", query_lower)
+    return bool(match and match.group(1) not in PAY_RECIPIENT_STOP_WORDS)
+
+
 class ChatInterface:
     """Interactive chat interface for querying bank transactions."""
 
@@ -184,8 +223,8 @@ class ChatInterface:
             "budget", "saved", "savings", "spent", "spend", "remaining"
         ])
 
-        # "Did I pay X?" or "Pay X" patterns with a name are specific queries
-        if re.search(r"\bpay\s+[A-Z][a-z]+", query) or re.search(r"\bpaid\s+[A-Z][a-z]+", query):
+        # "Did I pay Paul?" / "paid paul" patterns name a recipient
+        if _pay_recipient(query_lower):
             has_specific_keywords = True
 
         # Proper nouns (capitalized names like "Chanel Smith" or "Netflix") are specific queries
@@ -202,6 +241,10 @@ class ChatInterface:
 
         # Known brand names, tolerant of typos (e.g. "sportify"), are specific
         if not has_specific_keywords and _mentions_known_brand(query_lower):
+            has_specific_keywords = True
+
+        # Search synonyms (e.g. "ceiling", "petrol") are specific
+        if not has_specific_keywords and _mentions_known_synonym(query_lower):
             has_specific_keywords = True
 
         # Check if query mentions any category name
@@ -276,26 +319,10 @@ class ChatInterface:
 
         # Check for category keywords (with common synonyms)
         # These synonyms map to a category but should also filter by description
-        category_synonyms = {
-            "saved": "savings",
-            "save": "savings",
-            "petrol": "fuel",
-            "gas": "fuel",
-            "medical aid": "medical",  # Only map "medical aid" to category, not "doctor"
-            "flowers": "florist",
-            "flower": "florist",
-        }
+        category_synonyms = CATEGORY_SYNONYMS
         # These synonyms map to a category but need description filtering
         # (multiple things map to same category, e.g., roof/ceiling/pool → home_maintenance)
-        description_filter_synonyms = {
-            "roof": "home_maintenance",
-            "ceiling": "home_maintenance",
-            "electrician": "home_maintenance",
-            "plumber": "home_maintenance",
-            "garage": "home_maintenance",
-            "pool": "home_maintenance",
-            "fence": "home_maintenance",
-        }
+        description_filter_synonyms = DESCRIPTION_FILTER_SYNONYMS
 
         # Track if we need to filter by description term
         description_filter_term = None
