@@ -228,13 +228,24 @@ class TestTransactionLineParsing:
         assert result is None
 
     def test_parse_only_amounts_no_description(self, parser):
-        """Test parsing line with amounts but description becomes empty after parsing."""
-        # Line where description would be empty after amount extraction
-        # This tests the "if not description: return None" at line 226
-        line = "15 Oct 100.00"  # Only one amount, no balance, no description
+        """Test parsing line with a single amount and no description returns None."""
+        # Only one amount (no running balance) means the line is a fragment,
+        # not a real transaction
+        line = "15 Oct 100.00"
         result = parser._parse_transaction_line(line, 2025)
 
-        # With only one amount and no description, it should return None
+        assert result is None
+
+    def test_parse_rejects_bank_charges_fragment(self, parser):
+        """A line with a single amount is a bank charges fragment, not a transaction.
+
+        Table extraction can re-emit the charges column of a line like
+        "20 Jul Send Money ... 2,550.00 919.16Cr 30.00" as its own line
+        "20 Jul Send Money ... 30.00" with no balance. Real FNB lines
+        always carry a running balance, so single-amount lines are dropped.
+        """
+        line = "20 Jul Send Money App Dr Send Percy Gate 30.00"
+        result = parser._parse_transaction_line(line, 2026)
         assert result is None
 
 
@@ -320,6 +331,31 @@ class TestTransactionsParsing:
         assert len(transactions) == 1
         assert transactions[0].date == "2025-10-15"
         assert transactions[0].amount == -100.00
+
+    def test_parse_transactions_dedupes_duplicates(self, parser):
+        """Text and table extraction can emit the same line twice."""
+        text = """
+        Transactions in RAND
+        Date Description Amount Balance
+        15 Oct Some Payment 100.00 1,000.00Cr
+        15 Oct Some Payment 100.00 1,000.00Cr
+        """
+        transactions = parser._parse_transactions(text)
+
+        assert len(transactions) == 1
+        assert transactions[0].description == "Some Payment"
+
+    def test_parse_transactions_keeps_same_day_same_amount(self, parser):
+        """Distinct transactions on the same day differ by balance and are kept."""
+        text = """
+        Transactions in RAND
+        Date Description Amount Balance
+        15 Oct Toll Plaza 15.50 1,000.00Cr
+        15 Oct Toll Plaza 15.50 984.50Cr
+        """
+        transactions = parser._parse_transactions(text)
+
+        assert len(transactions) == 2
 
     def test_parse_transaction_no_space_between_day_and_month(self, parser):
         """Test parsing when PDF extracts date without space between day and month."""

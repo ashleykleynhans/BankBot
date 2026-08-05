@@ -428,7 +428,19 @@ class FNBParser(BaseBankParser):
             if tx:
                 transactions.append(tx)
 
-        return transactions
+        # Text and table extraction can produce the same transaction twice;
+        # drop exact duplicates (a real statement never repeats a line with
+        # the same date, description, amount and resulting balance).
+        seen: set[tuple] = set()
+        unique_transactions = []
+        for tx in transactions:
+            key = (tx.date, tx.description, tx.amount, tx.balance)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_transactions.append(tx)
+
+        return unique_transactions
 
     def _parse_transaction_line(self, line: str, year: int, statement_month: int | None = None) -> Transaction | None:
         """Parse a single transaction line."""
@@ -475,7 +487,10 @@ class FNBParser(BaseBankParser):
         # Find all amounts in the line
         amounts = list(re.finditer(amount_pattern, rest))
 
-        if len(amounts) < 1:
+        # FNB lines always have an amount and a running balance. A line with
+        # a single amount is a fragment (e.g. the bank charges column re-parsed
+        # from table extraction) rather than a real transaction.
+        if len(amounts) < 2:
             return None
 
         # FNB format: Amount | Balance | [Bank Charges]
@@ -521,9 +536,6 @@ class FNBParser(BaseBankParser):
             balance = float(balance_str)
             if balance_match.group(2) == "Dr":
                 balance = -balance
-
-        if not description:
-            return None
 
         return Transaction(
             date=date,
