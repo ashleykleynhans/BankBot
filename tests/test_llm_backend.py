@@ -226,7 +226,12 @@ class TestMLXBackend:
         assert isinstance(result, LLMResponse)
         assert result.content == "Hello response"
         assert result.prompt_tokens is None
-        mock_tokenizer.apply_chat_template.assert_called_once()
+        mock_tokenizer.apply_chat_template.assert_called_once_with(
+            [{"role": "user", "content": "Hi"}],
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
         mock_make_sampler.assert_called_once_with(temp=0.5)
         mock_generate_func.assert_called_once_with(
             mock_model,
