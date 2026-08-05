@@ -27,6 +27,29 @@ def _edit_distance(a: str, b: str) -> int:
     return prev[-1]
 
 
+KNOWN_BRANDS = {
+    "netflix", "spotify", "youtube", "apple", "google", "amazon",
+    "disney", "dstv", "showmax", "anthropic", "microsoft",
+}
+
+
+def _match_known_brand(word: str) -> str | None:
+    """Return the known brand a word refers to, tolerant of typos."""
+    if word in KNOWN_BRANDS:
+        return word
+    if len(word) >= 4:
+        max_distance = 1 if len(word) <= 5 else 2
+        for brand in KNOWN_BRANDS:
+            if abs(len(word) - len(brand)) <= 1 and _edit_distance(word, brand) <= max_distance:
+                return brand
+    return None
+
+
+def _mentions_known_brand(query_lower: str) -> bool:
+    """Check if a query mentions a known brand, tolerant of typos."""
+    return any(_match_known_brand(word) for word in re.findall(r"\b\w+\b", query_lower))
+
+
 class ChatInterface:
     """Interactive chat interface for querying bank transactions."""
 
@@ -175,6 +198,10 @@ class ChatInterface:
         capitalized_words = re.findall(r'\b[A-Z][a-z]+\b', query)
         proper_nouns = [w for w in capitalized_words if w.lower() not in common_starters]
         if proper_nouns:
+            has_specific_keywords = True
+
+        # Known brand names, tolerant of typos (e.g. "sportify"), are specific
+        if not has_specific_keywords and _mentions_known_brand(query_lower):
             has_specific_keywords = True
 
         # Check if query mentions any category name
@@ -354,10 +381,7 @@ class ChatInterface:
         proper_nouns = [w for w in capitalized_words if w.lower() not in common_starters]
         # Also recognize known brand names typed in lowercase (e.g., "spotify")
         # or with typos (e.g., "sportify" -> "spotify")
-        known_brands = {
-            "netflix", "spotify", "youtube", "apple", "google", "amazon",
-            "disney", "dstv", "showmax", "anthropic", "microsoft",
-        }
+        known_brands = KNOWN_BRANDS
         for word in re.findall(r'\b\w+\b', query_lower):
             if word in known_brands and word.capitalize() not in proper_nouns:
                 proper_nouns.append(word.capitalize())
@@ -862,8 +886,13 @@ Answer concisely and directly."""
                 prompt_tokens = sum(len(m.get('content', '')) for m in messages) // 4
                 total_tokens = completion_tokens + prompt_tokens
 
-            # Calculate tokens per second (completion tokens / time)
-            tokens_per_second = completion_tokens / elapsed_time if elapsed_time > 0 else 0
+            # Calculate tokens per second: prefer the backend's measured
+            # generation speed, else fall back to total elapsed time (which
+            # includes prompt processing and overstates slowness)
+            if response.tokens_per_second is not None:
+                tokens_per_second = response.tokens_per_second
+            else:
+                tokens_per_second = completion_tokens / elapsed_time if elapsed_time > 0 else 0
 
             # Store stats for retrieval
             self._last_llm_stats = {

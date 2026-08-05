@@ -696,6 +696,26 @@ class TestAskMethod:
         assert llm_stats["prompt_tokens"] == 150
         assert llm_stats["total_tokens"] == 175
 
+    def test_ask_uses_backend_measured_tokens_per_second(self, mock_db, mock_backend):
+        """Test ask prefers the backend's measured generation speed."""
+        mock_db.get_transactions_by_category.return_value = [
+            {"date": "2025-01-15", "description": "Woolworths", "amount": 500,
+             "category": "groceries", "transaction_type": "debit"}
+        ]
+
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = LLMResponse(
+            content="Your last grocery purchase was R500",
+            prompt_tokens=150,
+            completion_tokens=25,
+            total_tokens=175,
+            tokens_per_second=31.4,
+        )
+
+        _, _, llm_stats = chat.ask("when did I last buy groceries")
+
+        assert llm_stats["tokens_per_second"] == 31.4
+
     def test_ask_follow_up_uses_previous_transactions(self, mock_db, mock_backend):
         """Test ask method uses previous transactions for follow-up queries."""
         mock_db.get_transactions_by_category.return_value = [
@@ -1055,6 +1075,12 @@ class TestFollowUpDetection:
         # Single proper noun should also work
         assert chat._is_follow_up_query("Netflix history") is False
         assert chat._is_follow_up_query("Woolworths total") is False
+
+    def test_brand_typo_query_not_follow_up(self, mock_db):
+        """Test short queries with a misspelled brand are not follow-ups."""
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        assert chat._is_follow_up_query("when did sportify price increase") is False
+        assert chat._is_follow_up_query("when did netflix price increase") is False
 
 
 class TestFollowUpContext:

@@ -270,6 +270,28 @@ class TestTypoCorrection:
 
         assert len(transactions) == 2
 
+    def test_sportify_not_treated_as_follow_up(self, chat, mock_db):
+        """Short misspelled-brand query must not reuse previous transactions."""
+        chat._last_transactions = [
+            {"date": "2025-06-03", "description": "FNB App Payment To Ceiling Repairs",
+             "amount": -9460.84, "category": "home_maintenance", "transaction_type": "debit"},
+        ]
+        chat._last_search_query = "how much did I spend on ceiling"
+
+        mock_db.search_transactions.return_value = [
+            {"date": "2025-01-22", "description": "Spotify Premium", "amount": -99.99,
+             "category": "subscriptions", "transaction_type": "debit"},
+            {"date": "2025-06-22", "description": "Spotify Premium", "amount": -119.99,
+             "category": "subscriptions", "transaction_type": "debit"},
+        ]
+
+        response, transactions, _ = chat.ask("when did sportify price increase")
+
+        assert len(transactions) == 2
+        assert all(tx["category"] == "subscriptions" for tx in transactions)
+        assert "Spotify" in response
+        assert "increased" in response
+
     def test_metaflix_corrected_to_netflix_via_arrow(self, chat, mock_db):
         """'How much did I spent on Metaflix?' should correct to Netflix."""
         # LLM returns "Metaflix -> Netflix" format

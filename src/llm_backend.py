@@ -14,6 +14,7 @@ class LLMResponse:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    tokens_per_second: float | None = None
 
 
 class LLMBackend(ABC):
@@ -114,7 +115,7 @@ class MLXBackend(LLMBackend):
 
     def __init__(self, model: str) -> None:
         try:
-            from mlx_lm import generate, load
+            from mlx_lm import load, stream_generate
             from mlx_lm.sample_utils import make_sampler
         except ImportError:
             raise ImportError(
@@ -124,7 +125,7 @@ class MLXBackend(LLMBackend):
 
         self.model_name = model
         self._load = load
-        self._generate = generate
+        self._stream_generate = stream_generate
         self._make_sampler = make_sampler
         self._lock = threading.Lock()
         self._model, self._tokenizer = load(model)
@@ -148,16 +149,35 @@ class MLXBackend(LLMBackend):
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
 
+        content = ""
+        final = None
         with self._lock:
-            content = self._generate(
-                self._model, self._tokenizer, prompt=prompt, verbose=False, **kwargs
-            )
+            for response in self._stream_generate(
+                self._model, self._tokenizer, prompt=prompt, **kwargs
+            ):
+                content += response.text
+                final = response
 
         # Strip reasoning/thinking tags (handle missing opening tag too)
         content = re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL)
         content = re.sub(r"^.*?</think>\s*", "", content, flags=re.DOTALL)
 
-        return LLMResponse(content=content)
+        prompt_tokens = getattr(final, "prompt_tokens", None)
+        completion_tokens = getattr(final, "generation_tokens", None)
+        total_tokens = (
+            prompt_tokens + completion_tokens
+            if prompt_tokens is not None and completion_tokens is not None
+            else None
+        )
+        tokens_per_second = getattr(final, "generation_tps", None)
+
+        return LLMResponse(
+            content=content,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            tokens_per_second=tokens_per_second,
+        )
 
     def check_connection(self) -> bool:
         return self._model is not None

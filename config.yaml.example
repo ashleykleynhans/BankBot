@@ -19,7 +19,7 @@ llm:
   backend: mlx # Use "openai" for LM Studio, "mlx" for local MLX
   host: localhost
   port: 1234 # LM Studio default port (unused with mlx backend)
-  model: mlx-community/Qwen3-14B-4bit # Model for classification and chat
+  model: mlx-community/Qwen3-8B-4bit # Model for classification and chat
 
 # Paths
 paths:

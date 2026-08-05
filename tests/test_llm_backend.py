@@ -21,6 +21,16 @@ except ImportError:
 requires_mlx = pytest.mark.skipif(not HAS_MLX, reason="mlx-lm not installed")
 
 
+def mock_stream_response(text, prompt_tokens=10, generation_tokens=5, generation_tps=25.0):
+    """Create a mock mlx_lm GenerationResponse."""
+    response = Mock()
+    response.text = text
+    response.prompt_tokens = prompt_tokens
+    response.generation_tokens = generation_tokens
+    response.generation_tps = generation_tps
+    return response
+
+
 class TestLLMResponse:
     """Tests for LLMResponse dataclass."""
 
@@ -190,8 +200,8 @@ class TestMLXBackend:
 
     @patch("mlx_lm.sample_utils.make_sampler")
     @patch("mlx_lm.load")
-    @patch("mlx_lm.generate")
-    def test_init_loads_model(self, mock_generate, mock_load, mock_make_sampler):
+    @patch("mlx_lm.stream_generate")
+    def test_init_loads_model(self, mock_stream_generate, mock_load, mock_make_sampler):
         """Test MLXBackend loads the model on init."""
         mock_model = Mock()
         mock_tokenizer = Mock()
@@ -205,14 +215,16 @@ class TestMLXBackend:
 
     @patch("mlx_lm.sample_utils.make_sampler")
     @patch("mlx_lm.load")
-    @patch("mlx_lm.generate")
-    def test_chat_completion(self, mock_generate_func, mock_load, mock_make_sampler):
-        """Test MLXBackend chat completion."""
+    @patch("mlx_lm.stream_generate")
+    def test_chat_completion(self, mock_stream_generate, mock_load, mock_make_sampler):
+        """Test MLXBackend chat completion returns real token stats."""
         mock_model = Mock()
         mock_tokenizer = Mock()
         mock_load.return_value = (mock_model, mock_tokenizer)
         mock_tokenizer.apply_chat_template.return_value = "formatted prompt"
-        mock_generate_func.return_value = "Hello response"
+        mock_stream_generate.return_value = iter(
+            [mock_stream_response("Hello response", prompt_tokens=12, generation_tokens=7, generation_tps=31.4)]
+        )
         mock_sampler = Mock()
         mock_make_sampler.return_value = mock_sampler
 
@@ -225,7 +237,10 @@ class TestMLXBackend:
 
         assert isinstance(result, LLMResponse)
         assert result.content == "Hello response"
-        assert result.prompt_tokens is None
+        assert result.prompt_tokens == 12
+        assert result.completion_tokens == 7
+        assert result.total_tokens == 19
+        assert result.tokens_per_second == 31.4
         mock_tokenizer.apply_chat_template.assert_called_once_with(
             [{"role": "user", "content": "Hi"}],
             tokenize=False,
@@ -233,25 +248,45 @@ class TestMLXBackend:
             enable_thinking=False,
         )
         mock_make_sampler.assert_called_once_with(temp=0.5)
-        mock_generate_func.assert_called_once_with(
+        mock_stream_generate.assert_called_once_with(
             mock_model,
             mock_tokenizer,
             prompt="formatted prompt",
-            verbose=False,
             sampler=mock_sampler,
             max_tokens=100,
         )
 
     @patch("mlx_lm.sample_utils.make_sampler")
     @patch("mlx_lm.load")
-    @patch("mlx_lm.generate")
-    def test_chat_completion_strips_thinking_tags(self, mock_generate_func, mock_load, mock_make_sampler):
+    @patch("mlx_lm.stream_generate")
+    def test_chat_completion_accumulates_streamed_text(self, mock_stream_generate, mock_load, mock_make_sampler):
+        """Test MLXBackend concatenates text across streamed chunks."""
+        mock_load.return_value = (Mock(), Mock())
+        mock_stream_generate.return_value = iter(
+            [
+                mock_stream_response("Hello "),
+                mock_stream_response("world", generation_tokens=9),
+            ]
+        )
+
+        backend = MLXBackend(model="test-model")
+        result = backend.chat_completion(messages=[{"role": "user", "content": "Hi"}])
+
+        assert result.content == "Hello world"
+        assert result.completion_tokens == 9
+
+    @patch("mlx_lm.sample_utils.make_sampler")
+    @patch("mlx_lm.load")
+    @patch("mlx_lm.stream_generate")
+    def test_chat_completion_strips_thinking_tags(self, mock_stream_generate, mock_load, mock_make_sampler):
         """Test MLXBackend strips thinking tags from response."""
         mock_model = Mock()
         mock_tokenizer = Mock()
         mock_load.return_value = (mock_model, mock_tokenizer)
         mock_tokenizer.apply_chat_template.return_value = "prompt"
-        mock_generate_func.return_value = "<think>reasoning</think>\nActual answer"
+        mock_stream_generate.return_value = iter(
+            [mock_stream_response("<think>reasoning</think>\nActual answer")]
+        )
 
         backend = MLXBackend(model="test-model")
         result = backend.chat_completion(
@@ -262,15 +297,17 @@ class TestMLXBackend:
 
     @patch("mlx_lm.sample_utils.make_sampler")
     @patch("mlx_lm.load")
-    @patch("mlx_lm.generate")
-    def test_chat_completion_strips_thinking_without_opening_tag(self, mock_generate_func, mock_load, mock_make_sampler):
+    @patch("mlx_lm.stream_generate")
+    def test_chat_completion_strips_thinking_without_opening_tag(self, mock_stream_generate, mock_load, mock_make_sampler):
         """Test MLXBackend strips thinking content even without opening tag."""
         mock_model = Mock()
         mock_tokenizer = Mock()
         mock_load.return_value = (mock_model, mock_tokenizer)
         mock_tokenizer.apply_chat_template.return_value = "prompt"
-        # Model output missing opening <think> tag
-        mock_generate_func.return_value = "Some reasoning here</think>Actual answer"
+        # Model output missing opening  tag
+        mock_stream_generate.return_value = iter(
+            [mock_stream_response("Some reasoning here" + "</" + "think>" + "Actual answer")]
+        )
 
         backend = MLXBackend(model="test-model")
         result = backend.chat_completion(
@@ -281,8 +318,8 @@ class TestMLXBackend:
 
     @patch("mlx_lm.sample_utils.make_sampler")
     @patch("mlx_lm.load")
-    @patch("mlx_lm.generate")
-    def test_check_connection(self, mock_generate_func, mock_load, mock_make_sampler):
+    @patch("mlx_lm.stream_generate")
+    def test_check_connection(self, mock_stream_generate, mock_load, mock_make_sampler):
         """Test MLXBackend check_connection."""
         mock_load.return_value = (Mock(), Mock())
 
@@ -291,8 +328,8 @@ class TestMLXBackend:
 
     @patch("mlx_lm.sample_utils.make_sampler")
     @patch("mlx_lm.load")
-    @patch("mlx_lm.generate")
-    def test_get_available_models(self, mock_generate_func, mock_load, mock_make_sampler):
+    @patch("mlx_lm.stream_generate")
+    def test_get_available_models(self, mock_stream_generate, mock_load, mock_make_sampler):
         """Test MLXBackend get_available_models returns model name."""
         mock_load.return_value = (Mock(), Mock())
 
@@ -321,8 +358,8 @@ class TestCreateBackend:
     @requires_mlx
     @patch("mlx_lm.sample_utils.make_sampler")
     @patch("mlx_lm.load")
-    @patch("mlx_lm.generate")
-    def test_create_mlx_backend(self, mock_generate, mock_load, mock_make_sampler):
+    @patch("mlx_lm.stream_generate")
+    def test_create_mlx_backend(self, mock_stream_generate, mock_load, mock_make_sampler):
         """Test creating an MLX backend."""
         mock_load.return_value = (Mock(), Mock())
         config = {
@@ -337,8 +374,8 @@ class TestCreateBackend:
     @requires_mlx
     @patch("mlx_lm.sample_utils.make_sampler")
     @patch("mlx_lm.load")
-    @patch("mlx_lm.generate")
-    def test_default_backend_is_mlx(self, mock_generate, mock_load, mock_make_sampler):
+    @patch("mlx_lm.stream_generate")
+    def test_default_backend_is_mlx(self, mock_stream_generate, mock_load, mock_make_sampler):
         """Test default backend type is mlx."""
         mock_load.return_value = (Mock(), Mock())
         config = {"llm": {"model": "test-model"}}
@@ -348,8 +385,8 @@ class TestCreateBackend:
     @requires_mlx
     @patch("mlx_lm.sample_utils.make_sampler")
     @patch("mlx_lm.load")
-    @patch("mlx_lm.generate")
-    def test_default_model(self, mock_generate, mock_load, mock_make_sampler):
+    @patch("mlx_lm.stream_generate")
+    def test_default_model(self, mock_stream_generate, mock_load, mock_make_sampler):
         """Test default model name."""
         mock_load.return_value = (Mock(), Mock())
         config = {"llm": {}}
@@ -381,7 +418,7 @@ class TestCreateBackend:
         # This will try mlx backend which requires mlx_lm
         config = {}
         with patch("mlx_lm.load") as mock_load, \
-             patch("mlx_lm.generate"), \
+             patch("mlx_lm.stream_generate"), \
              patch("mlx_lm.sample_utils.make_sampler"):
             mock_load.return_value = (Mock(), Mock())
             backend = create_backend(config)
