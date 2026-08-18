@@ -1,0 +1,31 @@
+# VCS
+.git
+.gitignore
+
+# Local secrets and data (never copied into the image)
+config.yaml
+data
+statements
+
+# Python
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.coverage
+htmlcov
+*.egg-info
+build
+dist
+
+# Tests and CI
+tests
+.github
+docs
+
+# Frontend (served separately)
+frontend
+node_modules
+
+# Logs
+*.log
