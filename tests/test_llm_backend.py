@@ -96,6 +96,22 @@ class TestOpenAIBackend:
         assert result.total_tokens == 15
 
     @patch("openai.OpenAI")
+    def test_chat_completion_connection_error_includes_endpoint(self, mock_openai_cls):
+        """Test connection failures surface the configured LLM endpoint."""
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.base_url = "http://myhost:9999/v1"
+        mock_client.chat.completions.create.side_effect = Exception(
+            "Connection refused"
+        )
+
+        backend = OpenAIBackend(host="myhost", port=9999, model="test-model")
+        with pytest.raises(ConnectionError, match="http://myhost:9999/v1"):
+            backend.chat_completion(
+                messages=[{"role": "user", "content": "Hi"}],
+            )
+
+    @patch("openai.OpenAI")
     def test_chat_completion_no_usage(self, mock_openai_cls):
         """Test chat completion without usage data."""
         mock_client = MagicMock()

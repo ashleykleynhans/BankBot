@@ -81,7 +81,15 @@ class OpenAIBackend(LLMBackend):
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
 
-        response = client.chat.completions.create(**kwargs)
+        try:
+            response = client.chat.completions.create(**kwargs)
+        except Exception as e:
+            # Surface the configured endpoint so connection failures (e.g.
+            # an LLM server not running) are immediately diagnosable.
+            raise ConnectionError(
+                f"Could not reach LLM server at {client.base_url} "
+                f"(check BANKBOT_LLM_HOST/PORT and that it is running): {e}"
+            ) from e
         content = response.choices[0].message.content
 
         usage = getattr(response, "usage", None)
