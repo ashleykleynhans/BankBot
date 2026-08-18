@@ -733,6 +733,26 @@ class TestAskMethod:
 
         assert llm_stats["tokens_per_second"] == 31.4
 
+    def test_ask_corrects_merchant_typo_before_llm(self, mock_db, mock_backend):
+        """Test ask sends the corrected merchant spelling to the LLM."""
+        mock_db.search_transactions.return_value = [
+            {"date": "2026-07-14", "description": "DOG PARLOUR", "amount": 540,
+             "category": "dog_parlour", "transaction_type": "debit"}
+        ]
+
+        chat = ChatInterface(mock_db, backend=mock_backend)
+        mock_backend.chat_completion.return_value = mock_llm_response(
+            "You spent R6,780.00 on dog parlour."
+        )
+
+        chat.ask("how much spent on dog parlow")
+
+        call_args = mock_backend.chat_completion.call_args
+        messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
+        user_messages = [m["content"] for m in messages if m["role"] == "user"]
+        assert "dog parlour" in user_messages[-1]
+        assert "parlow" not in user_messages[-1]
+
     def test_ask_follow_up_uses_previous_transactions(self, mock_db, mock_backend):
         """Test ask method uses previous transactions for follow-up queries."""
         mock_db.get_transactions_by_category.return_value = [
@@ -756,6 +776,64 @@ class TestAskMethod:
         # Should NOT have fetched new transactions
         mock_db.get_transactions_by_category.assert_not_called()
         mock_db.search_transactions.assert_not_called()
+
+
+class TestMerchantTypoCorrection:
+    """Tests for merchant-name typo correction."""
+
+    def test_typo_corrected_in_query(self, mock_db):
+        """Test a merchant typo is replaced with the correct spelling."""
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        transactions = [
+            {"date": "2026-07-14", "description": "DOG PARLOUR", "amount": 540,
+             "category": "dog_parlour", "transaction_type": "debit"}
+        ]
+
+        result = chat._correct_merchant_typo("how much spent on dog parlow", transactions)
+
+        assert result == "how much spent on dog parlour"
+
+    def test_correct_spelling_unchanged(self, mock_db):
+        """Test a correctly spelled merchant is left alone."""
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        transactions = [
+            {"date": "2026-07-14", "description": "DOG PARLOUR", "amount": 540,
+             "category": "dog_parlour", "transaction_type": "debit"}
+        ]
+
+        result = chat._correct_merchant_typo("when last paid dog parlour", transactions)
+
+        assert result == "when last paid dog parlour"
+
+    def test_case_preserved(self, mock_db):
+        """Test replacement preserves the query word's casing."""
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        transactions = [
+            {"date": "2026-07-14", "description": "DOG PARLOUR", "amount": 540,
+             "category": "dog_parlour", "transaction_type": "debit"}
+        ]
+
+        assert chat._correct_merchant_typo("Dog Parlow", transactions) == "Dog Parlour"
+        assert chat._correct_merchant_typo("PARLOW", transactions) == "PARLOUR"
+
+    def test_no_transactions_unchanged(self, mock_db):
+        """Test the query is unchanged when there are no transactions."""
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+
+        assert chat._correct_merchant_typo("dog parlow", []) == "dog parlow"
+
+    def test_generic_description_word_unchanged(self, mock_db):
+        """Test a generic description word (e.g. 'From') never becomes the
+        merchant, so query words near it aren't rewritten."""
+        chat = ChatInterface(mock_db, backend=Mock(spec=LLMBackend))
+        transactions = [
+            {"date": "2026-07-14", "description": "Payment From Paul", "amount": 100,
+             "category": "eft_payment", "transaction_type": "debit"}
+        ]
+
+        result = chat._correct_merchant_typo("how much did I spend on food", transactions)
+
+        assert result == "how much did I spend on food"
 
 
 class TestChatStart:

@@ -33,6 +33,13 @@ KNOWN_BRANDS = {
     "disney", "dstv", "showmax", "anthropic", "microsoft",
 }
 
+# Description words that are never the actual merchant (e.g. "Payment From
+# Paul" must not turn a query typo into "from").
+GENERIC_MERCHANT_WORDS = {
+    "payment", "purchase", "debit", "credit", "pos", "fee", "fees",
+    "from", "to", "the", "and", "for", "with", "this", "account",
+}
+
 
 def _match_known_brand(word: str) -> str | None:
     """Return the known brand a word refers to, tolerant of typos."""
@@ -182,6 +189,10 @@ class ChatInterface:
             # Store for potential follow-up queries
             self._last_transactions = relevant_transactions
             self._last_search_query = query
+
+        # Replace any merchant-name typo with the correct spelling from the
+        # matched transactions so the LLM doesn't echo the misspelling.
+        query = self._correct_merchant_typo(query, relevant_transactions)
 
         # Build context for the LLM
         context = self._build_context(relevant_transactions, query)
@@ -1071,6 +1082,40 @@ Answer concisely and directly."""
                 return word.strip(".,")
         return "this service"
 
+    def _correct_merchant_typo(self, query: str, transactions: list[dict]) -> str:
+        """Replace a misspelled merchant name in the query with the correct
+        spelling from the matched transactions.
+
+        The local LLM echoes the user's typo (e.g. "parlow" -> "parlour")
+        despite prompt instructions, and the misspelling then leaks into
+        conversation history and later answers. Correcting the query before
+        it reaches the context, LLM and history fixes this deterministically.
+        """
+        merchant = self._extract_merchant_name(transactions)
+        if not merchant or merchant == "this service":
+            return query
+        merchant_lower = merchant.lower()
+        if len(merchant_lower) < 4 or merchant_lower in GENERIC_MERCHANT_WORDS:
+            return query
+
+        def replace(match: re.Match) -> str:
+            word = match.group(0)
+            word_lower = word.lower()
+            if word_lower == merchant_lower:
+                return word
+            if (
+                abs(len(word_lower) - len(merchant_lower)) <= 1
+                and _edit_distance(word_lower, merchant_lower) <= 2
+            ):
+                if word.isupper():
+                    return merchant_lower.upper()
+                if word[:1].isupper():
+                    return merchant_lower.capitalize()
+                return merchant_lower
+            return word
+
+        return re.sub(r"\b[a-zA-Z]+\b", replace, query)
+
     def ask(self, query: str) -> tuple[str, list[dict], dict | None]:
         """Single query method for non-interactive use.
 
@@ -1215,6 +1260,10 @@ Answer concisely and directly."""
                     return response, [], None
             else:
                 return "You haven't set any budgets yet. Say 'Set my groceries budget to R5000' to create one.", [], None
+
+        # Replace any merchant-name typo with the correct spelling from the
+        # matched transactions so the LLM doesn't echo the misspelling.
+        query = self._correct_merchant_typo(query, relevant_transactions)
 
         context = self._build_context(relevant_transactions, query)
         response = self._get_llm_response(query, context)
