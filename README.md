@@ -133,24 +133,44 @@ The model will be downloaded automatically on first run (~2.5GB).
    # Set up CLI tools (first time only)
    ~/.lmstudio/bin/lms bootstrap
    source ~/.zshrc
+   ```
 
-   # Download and start a model
-   lms get openai/gpt-oss-20b
-   lms load openai/gpt-oss-20b
+2. **Get a model**: `lms get` lowercases repo names, so mixed-case HuggingFace
+   repos like `mlx-community/Qwen3-8B-4bit` fail with "artifact does not exist
+   or you do not have permission". Use the full URL to preserve case, or import
+   from an existing HuggingFace cache (no re-download):
+
+   ```bash
+   # Via full URL (preserves case):
+   lms get https://huggingface.co/mlx-community/Qwen3-8B-4bit --mlx -y
+
+   # Or import from a local HuggingFace cache (no download):
+   SNAP=$(ls -d ~/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/*/ | head -1)
+   mkdir -p ~/.lmstudio/models/mlx-community/Qwen3-8B-4bit
+   cp "$SNAP"* ~/.lmstudio/models/mlx-community/Qwen3-8B-4bit/
+   ```
+
+3. **Load the model and start the server**:
+   ```bash
+   lms load qwen3-8b
    lms server start
    ```
 
-2. **Configure** (`config.yaml`):
+   The API model id is `qwen3-8b` (confirm with `curl localhost:1234/v1/models`).
+   On a 16 GB Mac prefer the 8B: the 14B spills into swap. On the Developer tab
+   of the LM Studio app, Start Server on port 1234.
+
+4. **Configure** (`config.yaml`):
    ```yaml
    bank: fnb
    llm:
      backend: openai              # Use OpenAI-compatible API
      host: localhost
      port: 1234                   # LM Studio default port
-     model: openai/gpt-oss-20b    # Model for classification
+     model: qwen3-8b              # Model id served by LM Studio
    ```
 
-3. **Add statements**: Place PDF bank statements in the `statements/` directory
+5. **Add statements**: Place PDF bank statements in the `statements/` directory
 
 ## Usage
 
@@ -316,7 +336,7 @@ llm:
   # backend: openai
   # host: localhost
   # port: 1234
-  # model: openai/gpt-oss-20b
+  # model: qwen3-8b
 
 # File paths
 paths:
@@ -444,6 +464,59 @@ npm run build
 
 The built files will be in `frontend/dist/`.
 
+## Docker
+
+Run the backend and the nginx-served frontend with docker compose:
+
+```bash
+docker compose up -d --build
+```
+
+Open http://localhost:8080. The API is also exposed on http://localhost:8000
+for debugging. `./data` and `./statements` are mounted read-write, so your
+existing database and PDFs are used as-is; import statements with:
+
+```bash
+docker compose exec bankbot bankbot import
+```
+
+### LLM configuration
+
+The container cannot use the MLX backend (Apple Silicon only). It defaults to
+the OpenAI-compatible backend and connects to an LLM server on the host through
+`host.docker.internal`:
+
+```yaml
+# docker-compose.yml
+environment:
+  BANKBOT_LLM_HOST: host.docker.internal # the host machine, from inside the container
+  BANKBOT_LLM_PORT: "1234"               # LM Studio default; 11434 for Ollama
+  BANKBOT_LLM_MODEL: "qwen3-8b"          # must match what /v1/models returns
+```
+
+Prerequisite on the host: an OpenAI-compatible LLM server listening on the port
+above, serving the model id set in `BANKBOT_LLM_MODEL` (LM Studio: Developer tab
+-> Start Server, `lms load qwen3-8b`). See
+[Option B: OpenAI-Compatible API](#option-b-openai-compatible-api-lm-studio-ollama-etc).
+
+`BANKBOT_*` environment variables override `config.yaml`, so the image runs with
+its baked example config. Available: `BANKBOT_LLM_BACKEND`, `BANKBOT_LLM_HOST`,
+`BANKBOT_LLM_PORT`, `BANKBOT_LLM_MODEL`, `BANKBOT_DB`, `BANKBOT_STATEMENTS_DIR`,
+and `BANKBOT_ALLOWED_ORIGINS` (comma-separated browser origins, default allows
+the vite dev server and the nginx proxy).
+
+### Images
+
+- `bankbot` backend image: `ghcr.io/ashleykleynhans/bankbot` (published
+  automatically by the Docker workflow on pushes to `main` and `v*` tags)
+- `frontend` service: built locally from `frontend/Dockerfile` (not published)
+
+Build and push the backend image manually (multi-arch amd64 + arm64):
+
+```bash
+docker buildx bake push
+```
+
 ## Project Structure
 
 ```
@@ -491,6 +564,9 @@ BankBot/
 │   └── vite.config.js
 ├── tests/                # Test suite
 ├── config.yaml
+├── Dockerfile            # Backend image (uv builder + python runtime)
+├── docker-bake.hcl       # Multi-arch GHCR build targets
+├── docker-compose.yml    # Backend + frontend/nginx stack
 └── pyproject.toml
 ```
 
