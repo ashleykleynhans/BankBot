@@ -497,6 +497,24 @@ class TestWebSocketChat:
         assert response.status_code == 200
         assert "access-control-allow-origin" not in response.headers
 
+    def test_cors_allows_nginx_proxy_origin(self, client):
+        """Test the nginx proxy origin (docker-compose) is allowed."""
+        response = client.get("/health", headers={"origin": "http://localhost:8080"})
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == "http://localhost:8080"
+
+    def test_allowed_origins_env_override(self, monkeypatch, tmp_path):
+        """Test BANKBOT_ALLOWED_ORIGINS replaces the default list."""
+        from src.api.app import _allowed_origins
+
+        monkeypatch.setenv("BANKBOT_ALLOWED_ORIGINS", "http://a.example.com, http://b.example.com")
+        assert _allowed_origins() == ["http://a.example.com", "http://b.example.com"]
+
+        monkeypatch.delenv("BANKBOT_ALLOWED_ORIGINS")
+        defaults = _allowed_origins()
+        assert "http://localhost:5173" in defaults
+        assert "http://localhost:8080" in defaults
+
     def test_websocket_connect_missing_tables(self, client, mock_db, mock_config):
         """Test WebSocket connection when DB tables don't exist."""
         mock_db.get_stats.side_effect = sqlite3.OperationalError("no such table: statements")

@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8000:8000" # direct API access for debugging; the frontend goes through nginx
     volumes:
       - ./data:/app/data
       - ./statements:/app/statements
@@ -23,3 +23,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      bankbot:
+        condition: service_healthy
+    restart: unless-stopped

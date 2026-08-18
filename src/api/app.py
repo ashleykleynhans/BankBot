@@ -1,6 +1,7 @@
 """FastAPI application for statement-chat API."""
 
 import asyncio
+import os
 import sqlite3
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -18,10 +19,21 @@ from .session import session_manager
 # Browser origins allowed to call the API and open the chat WebSocket.
 # The API has no authentication, so anything else is rejected to prevent
 # arbitrary websites from reading financial data cross-origin.
-ALLOWED_ORIGINS = [
+# 5173 is the vite dev server; 8080 is the nginx proxy in docker-compose.
+DEFAULT_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
 ]
+
+
+def _allowed_origins() -> list[str]:
+    """Resolve allowed browser origins, honoring BANKBOT_ALLOWED_ORIGINS."""
+    raw = os.environ.get("BANKBOT_ALLOWED_ORIGINS")
+    if raw:
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return list(DEFAULT_ALLOWED_ORIGINS)
 
 
 @asynccontextmanager
@@ -63,15 +75,17 @@ def create_app() -> FastAPI:
     )
 
     # CORS configuration for browser clients
+    allowed_origins = _allowed_origins()
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=ALLOWED_ORIGINS,
+        allow_origins=allowed_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     # Shared with the WebSocket router for Origin validation
-    app.state.allowed_origins = ALLOWED_ORIGINS
+    app.state.allowed_origins = allowed_origins
 
     # Include routers
     app.include_router(chat.router, prefix="/ws", tags=["chat"])
