@@ -1,6 +1,7 @@
 import json
 import re
 import time
+import traceback
 from datetime import datetime, timedelta
 
 from rich.console import Console
@@ -941,7 +942,15 @@ Answer concisely and directly."""
             # Remove the failed user message from history
             self._conversation_history.pop()
             self._last_llm_stats = None
-            return f"Sorry, I couldn't process your request. Error: {str(e)}"
+            # Log the full traceback: str(e) can be an opaque fragment (e.g.
+            # jinja2's "unicode-escape" extracted from a codec failure while
+            # lexing the chat template), so the server log is the only place
+            # the real cause is visible.
+            traceback.print_exc()
+            return (
+                f"Sorry, I couldn't process your request. "
+                f"Error ({type(e).__name__}): {e}"
+            )
 
     def _display_transactions(self, transactions: list[dict]) -> None:
         """Display transactions in a formatted table."""

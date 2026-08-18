@@ -501,7 +501,7 @@ class TestOCRFallback:
         # Should keep original description
         assert result[0].description == "Bank fee/charge"
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_via_ocr_success(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR extraction parses transaction lines correctly."""
@@ -536,7 +536,7 @@ class TestOCRFallback:
         assert ("09-30", 19.0) in result
         assert result[("09-30", 19.0)] == "#Rev Ewa Man Fee"
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     def test_extract_descriptions_via_ocr_handles_error(self, mock_fitz, parser, tmp_path):
         """Test OCR extraction handles errors gracefully."""
         mock_fitz.open.side_effect = Exception("PDF error")
@@ -546,7 +546,7 @@ class TestOCRFallback:
         # Should return empty dict on error
         assert result == {}
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_ocr_credit_variations(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR handles various credit indicator formats (Cr, ¢7, etc.)."""
@@ -572,7 +572,7 @@ class TestOCRFallback:
         # Should have parsed the credit despite OCR errors
         assert ("09-30", 19.0) in result
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_skips_empty_description(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR skips lines with empty descriptions."""
@@ -598,7 +598,7 @@ class TestOCRFallback:
         # Empty description should be skipped
         assert len(result) == 0
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_invalid_date(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR skips lines with invalid dates (ValueError in strptime)."""
@@ -623,7 +623,7 @@ class TestOCRFallback:
         # Invalid date (31 Feb doesn't exist) should be skipped
         assert len(result) == 0
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_invalid_amount(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR skips lines when amount parsing fails (ValueError in float).
@@ -728,7 +728,7 @@ class TestOCRFallback:
         # Should not crash, OCR should be called with year=None
         mock_ocr.assert_called_once()
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_standalone_hash_description(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR extracts standalone # description lines (lines 222-223)."""
@@ -759,7 +759,7 @@ class TestOCRFallback:
         assert ("12-01", -120.0) in result
         assert result[("12-01", -120.0)] == "#Monthly Account Fee"
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_inline_hash_description(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR extracts inline # descriptions (hash_match pattern, line 237-251)."""
@@ -789,7 +789,7 @@ class TestOCRFallback:
         assert ("12-01", -120.0) in result
         assert "#Monthly Account Fee" in result[("12-01", -120.0)]
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_hash_match_invalid_date(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR handles invalid date in hash_match (ValueError branch, line 250)."""
@@ -818,7 +818,7 @@ class TestOCRFallback:
         # Invalid date should be skipped
         assert len(result) == 0
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_standalone_with_transaction_below(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR matches standalone # description with transaction below (lines 290-312)."""
@@ -849,7 +849,7 @@ class TestOCRFallback:
         assert ("12-01", -45.0) in result
         assert result[("12-01", -45.0)] == "#Value Added Serv Fees"
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_no_standalone_for_transaction(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR transaction without description and no standalone above (lines 300-301)."""
@@ -878,7 +878,7 @@ class TestOCRFallback:
         # No description should be added since there's no standalone above
         assert len(result) == 0
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_standalone_invalid_date_in_bare_tx(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR handles invalid date in bare transaction match (lines 302-311)."""
@@ -908,7 +908,7 @@ class TestOCRFallback:
         # Invalid date should cause the transaction to be skipped
         assert len(result) == 0
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_multiple_standalone_uses_closest(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR uses closest preceding standalone description (lines 295-298)."""
@@ -940,7 +940,7 @@ class TestOCRFallback:
         assert ("12-01", -100.0) in result
         assert result[("12-01", -100.0)] == "#Second Description"
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_strips_slash_artifact(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR strips leading slash from # descriptions (OCR artifact)."""
@@ -972,7 +972,7 @@ class TestOCRFallback:
         assert result[("07-01", -39.70)] == "#Service Fees"
         assert "/" not in result[("07-01", -39.70)]
 
-    @patch('src.parsers.fnb.fitz')
+    @patch('src.parsers.fnb.pymupdf')
     @patch('src.parsers.fnb.pytesseract')
     def test_extract_descriptions_inline_strips_slash_artifact(self, mock_tesseract, mock_fitz, parser, tmp_path):
         """Test OCR strips leading slash from inline # descriptions."""

@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timedelta
+from jinja2.exceptions import TemplateSyntaxError
 
 from src.chat import ChatInterface, _edit_distance
 from src.database import Database
@@ -651,6 +652,17 @@ class TestLLMResponse:
         result = chat._get_llm_response("test", "context")
 
         assert "error" in result.lower() or "sorry" in result.lower()
+
+    def test_llm_error_surfaces_exception_type(self, chat, mock_db, mock_backend):
+        """Test the error message includes the exception type so opaque
+        fragments like jinja2's 'unicode-escape' remain diagnosable."""
+        mock_backend.chat_completion.side_effect = TemplateSyntaxError(
+            "unicode-escape", 1
+        )
+
+        result = chat._get_llm_response("test", "context")
+
+        assert "Error (TemplateSyntaxError): unicode-escape" in result
 
 
 class TestAskMethod:

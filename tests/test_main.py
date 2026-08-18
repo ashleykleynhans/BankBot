@@ -1141,7 +1141,7 @@ class TestCmdDebugOcr:
 
         assert exc.value.code == 1
 
-    @patch('fitz.open')
+    @patch('pymupdf.open')
     def test_debug_ocr_page_not_found(self, mock_fitz_open, mock_config, tmp_path):
         """Test debug-ocr with invalid page number."""
         pdf_file = tmp_path / "test.pdf"
@@ -1166,8 +1166,8 @@ class TestCmdDebugOcr:
 
     @patch('pdfplumber.open')
     @patch('pytesseract.image_to_string')
-    @patch('fitz.Matrix')
-    @patch('fitz.open')
+    @patch('pymupdf.Matrix')
+    @patch('pymupdf.open')
     def test_debug_ocr_success(self, mock_fitz_open, mock_fitz_matrix, mock_tesseract, mock_pdfplumber_open, mock_config, tmp_path):
         """Test successful debug-ocr execution."""
         pdf_file = tmp_path / "test.pdf"
@@ -1216,8 +1216,8 @@ class TestCmdDebugOcr:
 
     @patch('pdfplumber.open')
     @patch('pytesseract.image_to_string')
-    @patch('fitz.Matrix')
-    @patch('fitz.open')
+    @patch('pymupdf.Matrix')
+    @patch('pymupdf.open')
     def test_debug_ocr_save_image(self, mock_fitz_open, mock_fitz_matrix, mock_tesseract, mock_pdfplumber_open, mock_config, tmp_path):
         """Test debug-ocr with save_image option."""
         pdf_file = tmp_path / "test.pdf"
@@ -1268,8 +1268,8 @@ class TestCmdDebugOcr:
 
     @patch('pdfplumber.open')
     @patch('pytesseract.image_to_string')
-    @patch('fitz.Matrix')
-    @patch('fitz.open')
+    @patch('pymupdf.Matrix')
+    @patch('pymupdf.open')
     def test_debug_ocr_with_hash_description(self, mock_fitz_open, mock_fitz_matrix, mock_tesseract, mock_pdfplumber_open, mock_config, tmp_path):
         """Test debug-ocr finds lines with # descriptions."""
         pdf_file = tmp_path / "test.pdf"

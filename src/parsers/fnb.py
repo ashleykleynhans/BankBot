@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-import fitz  # PyMuPDF
+import pymupdf
 import pdfplumber
 import pytesseract
 from PIL import Image
@@ -188,10 +188,10 @@ class FNBParser(BaseBankParser):
         descriptions = {}
 
         try:
-            doc = fitz.open(pdf_path, password=password)
+            doc = pymupdf.open(pdf_path, password=password)
             for page_num, page in enumerate(doc):
                 # Render page to image at 4x resolution for better OCR of small fonts
-                mat = fitz.Matrix(4, 4)
+                mat = pymupdf.Matrix(4, 4)
                 pix = page.get_pixmap(matrix=mat)
                 img = Image.open(io.BytesIO(pix.tobytes("png")))
 

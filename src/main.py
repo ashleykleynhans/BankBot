@@ -664,7 +664,7 @@ def cmd_debug_ocr(args: argparse.Namespace, config: dict) -> None:
     """Debug OCR output for a PDF file."""
     import io
 
-    import fitz
+    import pymupdf
     import pytesseract
     from PIL import Image
 
@@ -676,7 +676,7 @@ def cmd_debug_ocr(args: argparse.Namespace, config: dict) -> None:
 
     console.print(f"[bold]OCR Debug for: {pdf_path.name}[/bold]\n")
 
-    doc = fitz.open(pdf_path)
+    doc = pymupdf.open(pdf_path)
     page_num = args.page - 1 if args.page else 0
 
     if page_num >= len(doc):
@@ -687,7 +687,7 @@ def cmd_debug_ocr(args: argparse.Namespace, config: dict) -> None:
 
     # Render at high resolution
     scale = args.scale or 4
-    mat = fitz.Matrix(scale, scale)
+    mat = pymupdf.Matrix(scale, scale)
     pix = page.get_pixmap(matrix=mat)
     img = Image.open(io.BytesIO(pix.tobytes("png")))
 
