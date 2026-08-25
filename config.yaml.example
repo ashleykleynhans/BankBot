@@ -217,6 +217,10 @@ classification_rules:
   # Gymnastics Lessons
   "Tiny Twisters": gymnastics_lessons
 
+  # Hair Salon
+  "HAIR STUDIO": hair_salon
+  "Haircut": hair_salon
+
   # Hardware
   "Builders": hardware
   "Hardware": hardware
@@ -233,7 +237,7 @@ classification_rules:
   "Swimart": home_maintenance
   "The Pool Team": home_maintenance
 
-    # Import Duties
+  # Import Duties
   "Allport Cargo": import_duties
   "Buffalo Internation": import_duties
   "Linex Air Services": import_duties
