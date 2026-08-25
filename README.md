@@ -41,8 +41,11 @@ Want to add support for another bank? See [Adding Support for New Banks](
 - **Investec API**: Fetch transactions directly from the Investec Programmable Banking API
 - **Auto-Classification**: Uses local LLM to categorize transactions (doctor, groceries, utilities, etc.)
 - **Chat Interface**: Ask natural language questions about your spending
+- **Cashflow Forecasting**: Detects recurring payments and income, projects daily
+  balances up to 400 days ahead, flags overdraw risks before they happen, and
+  answers "Can I afford this?" with a simulated yes/no verdict
 - **REST + WebSocket API**: Integrate with frontend applications
-- **Web Frontend**: Svelte-based dashboard with chat, transactions, and analytics
+- **Web Frontend**: Svelte-based dashboard with chat, transactions, analytics, and forecast
 - **Analytics**: Pie charts showing spending breakdown per statement
 - **Budget Tracking**: Set monthly budgets per category and track actual vs budgeted spending
 - **File Watcher**: Automatically imports new statements when added
@@ -233,6 +236,19 @@ bankbot export-budget budgets.yaml
 # Import budgets from file (clears existing budgets first)
 bankbot import-budget budgets.json
 
+# Forecast future balances and cashflow risks (31 days by default)
+bankbot forecast
+bankbot forecast --days 60 --buffer 1000   # warn below a R1,000 buffer
+bankbot forecast --no-burn                 # committed recurring flows only
+bankbot forecast --account all             # consolidate every account
+
+# List detected recurring payments and income
+bankbot recurring
+
+# Check whether an expense is affordable today or on a future date
+bankbot afford 500
+bankbot afford 5000 --in-days 14
+
 # Start API server (REST + WebSocket)
 bankbot serve
 bankbot serve --port 3000
@@ -268,6 +284,13 @@ Assistant: Last month you spent R4,523.50 on groceries across 12 transactions...
 
 You: Show my largest expenses
 Assistant: Your largest expenses were...
+
+You: Can I afford R500 on Friday?
+Assistant: Yes, you can afford R500.00. Your lowest balance afterwards
+would still be R2,318.40 around 4 September 2026.
+
+You: What are my recurring payments?
+Assistant: You have 9 recurring payments totalling about R12,450.00 per month...
 ```
 
 ## Adding Support for New Banks
@@ -392,6 +415,9 @@ Start the API server with `bankbot serve`. Interactive docs available at `http:/
 | POST | `/api/v1/budgets` | Create/update budget |
 | DELETE | `/api/v1/budgets/{category}` | Delete a budget |
 | GET | `/api/v1/budgets/summary` | Budget vs actual comparison |
+| GET | `/api/v1/forecast/recurring` | Detected recurring payments (`?min_count=3&account=`) |
+| GET | `/api/v1/forecast/balance` | Projected daily balances (`?days=31&include_burn=true&buffer=0&account=`) |
+| GET | `/api/v1/forecast/afford` | Affordability check (`?amount=500&days_ahead=0&account=`) |
 
 ### WebSocket Chat
 
@@ -451,6 +477,8 @@ Then open http://localhost:5173 in your browser.
 
 - **Chat**: Real-time WebSocket chat with transaction context
 - **Dashboard**: Stats overview and spending by category chart
+- **Forecast**: Projected balance chart, cashflow risk alerts, recurring
+  payments table, and a "Can I Afford It?" simulator
 - **Analytics**: Pie charts showing spending breakdown per statement with statement selector
 - **Budget**: Set budgets per category, track spending with progress bars (color-coded: green/yellow/red)
 - **Transactions**: Searchable, filterable transaction list with pagination
@@ -527,6 +555,7 @@ BankBot/
 ├── src/
 │   ├── main.py          # CLI entry point
 │   ├── database.py      # Database operations
+│   ├── forecast.py      # Cashflow forecast engine (recurring, projection, affordability)
 │   ├── classifier.py    # LLM classifier
 │   ├── chat.py          # Chat interface
 │   ├── watcher.py       # File watcher
@@ -541,6 +570,7 @@ BankBot/
 │   │       ├── transactions.py # Transaction queries
 │   │       ├── analytics.py   # Analytics endpoints
 │   │       ├── budgets.py     # Budget CRUD
+│   │       ├── forecast.py    # Forecast endpoints
 │   │       └── chat.py        # WebSocket chat
 │   ├── investec_api.py  # Investec Programmable Banking API client
 │   └── parsers/
@@ -555,6 +585,7 @@ BankBot/
 │   │   └── components/
 │   │       ├── Chat.svelte        # Chat interface
 │   │       ├── Dashboard.svelte   # Stats overview
+│   │       ├── Forecast.svelte    # Cashflow forecast page
 │   │       ├── Analytics.svelte   # Pie chart analytics
 │   │       ├── Budget.svelte      # Budget management
 │   │       ├── Transactions.svelte # Transaction list

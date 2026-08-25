@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from ..config import get_config
 from ..database import Database
 from ..llm_backend import create_backend
-from .routers import analytics, budgets, chat, stats, transactions
+from .routers import analytics, budgets, chat, forecast, stats, transactions
 from .session import session_manager
 
 # Browser origins allowed to call the API and open the chat WebSocket.
@@ -93,6 +93,7 @@ def create_app() -> FastAPI:
     app.include_router(transactions.router, prefix="/api/v1", tags=["transactions"])
     app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
     app.include_router(budgets.router, prefix="/api/v1", tags=["budgets"])
+    app.include_router(forecast.router, prefix="/api/v1", tags=["forecast"])
 
     @app.exception_handler(sqlite3.OperationalError)
     async def sqlite_error_handler(request: Request, exc: sqlite3.OperationalError) -> JSONResponse:

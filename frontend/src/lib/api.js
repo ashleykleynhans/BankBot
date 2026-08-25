@@ -191,6 +191,38 @@ export async function deleteAllBudgets() {
   });
 }
 
+// ============ Forecast API ============
+
+/**
+ * Detect recurring payments and income.
+ * @param {number} minCount - Minimum occurrences to consider recurring
+ */
+export async function getRecurringPayments(minCount = 3) {
+  return fetchJSON(`${BASE_URL}/forecast/recurring?min_count=${minCount}`);
+}
+
+/**
+ * Get the projected balance forecast.
+ * @param {number} days - Horizon in days
+ * @param {boolean} includeBurn - Apply average daily non-recurring spend
+ */
+export async function getBalanceForecast(days = 31, includeBurn = true) {
+  return fetchJSON(
+    `${BASE_URL}/forecast/balance?days=${days}&include_burn=${includeBurn}`
+  );
+}
+
+/**
+ * Check whether an expense is affordable on a future date.
+ * @param {number} amount - Expense amount
+ * @param {number} daysAhead - Days until the expense would happen
+ */
+export async function checkAffordability(amount, daysAhead = 0) {
+  return fetchJSON(
+    `${BASE_URL}/forecast/afford?amount=${amount}&days_ahead=${daysAhead}`
+  );
+}
+
 // ============ Export API ============
 
 /**

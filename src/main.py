@@ -471,6 +471,157 @@ def cmd_import_budget(args: argparse.Namespace, config: dict) -> None:
     console.print(f"[green]Imported {imported} budgets from {input_path}[/green]")
 
 
+def cmd_forecast(args: argparse.Namespace, config: dict) -> None:
+    """Project future balances and highlight cashflow risks."""
+    from .forecast import ForecastEngine
+
+    db = Database(config["paths"]["database"])
+    if db.get_stats()["total_transactions"] == 0:
+        console.print("[yellow]No transactions in database.[/yellow]")
+        console.print("[dim]Import statements first with 'bankbot import'.[/dim]")
+        sys.exit(1)
+
+    engine = ForecastEngine(db)
+    forecast = engine.project(
+        days=args.days,
+        include_burn=not args.no_burn,
+        safety_buffer=args.buffer,
+        account=args.account,
+    )
+
+    if forecast["start_balance"] is None:
+        console.print(
+            "[yellow]Cannot project balances: no transactions carry a running "
+            "balance.[/yellow]"
+        )
+        for risk in forecast["risks"]:
+            console.print(f"  {risk['message']}")
+        return
+
+    console.print(f"\n[bold]Balance Forecast ({forecast['days']} days)[/bold]")
+    if forecast["account"]:
+        console.print(f"[dim]Account: {forecast['account']}[/dim]")
+    console.print(
+        f"As of {forecast['start_balance_date']}: "
+        f"[cyan]R{forecast['start_balance']:,.2f}[/cyan] "
+        f"(daily non-recurring net: R{forecast['daily_burn']:,.2f})"
+    )
+
+    table = Table(title="Projected Milestones")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    end_color = "red" if (forecast["end_balance"] or 0) < 0 else "green"
+    low_color = "red" if (forecast["lowest_balance"] or 0) < 0 else "yellow"
+    table.add_row("End of horizon", f"[{end_color}]R{forecast['end_balance']:,.2f}[/{end_color}]")
+    table.add_row("Lowest point", f"[{low_color}]R{forecast['lowest_balance']:,.2f}[/{low_color}]")
+    table.add_row("Lowest date", str(forecast["lowest_date"]))
+    table.add_row(
+        "Committed monthly inflow", f"[green]R{forecast['committed_monthly_inflow']:,.2f}[/green]"
+    )
+    table.add_row(
+        "Committed monthly outflow",
+        f"[red]R{forecast['committed_monthly_outflow']:,.2f}[/red]",
+    )
+    console.print(table)
+
+    if forecast["upcoming_debits"]:
+        console.print("\n[bold]Upcoming debits (next 7 days)[/bold]")
+        for debit in forecast["upcoming_debits"][:10]:
+            console.print(
+                f"  {debit['date']}: {debit['merchant']} - R{debit['amount']:,.2f}"
+            )
+
+    console.print("\n[bold]Risk Alerts[/bold]")
+    for risk in forecast["risks"]:
+        style = {"critical": "bold red", "warning": "yellow", "ok": "green"}.get(
+            risk["severity"], "white"
+        )
+        console.print(f"  [{style}]{risk['message']}[/{style}]")
+
+
+def cmd_recurring(args: argparse.Namespace, config: dict) -> None:
+    """List detected recurring payments and income."""
+    from .forecast import ForecastEngine
+
+    db = Database(config["paths"]["database"])
+    if db.get_stats()["total_transactions"] == 0:
+        console.print("[yellow]No transactions in database.[/yellow]")
+        sys.exit(1)
+
+    items = ForecastEngine(db).detect_recurring(
+        min_occurrences=args.min_count,
+        account=args.account,
+    )
+
+    if not items:
+        console.print("[yellow]No recurring payments detected.[/yellow]")
+        return
+
+    table = Table(title=f"Recurring Payments ({len(items)} found)")
+    table.add_column("Merchant")
+    table.add_column("Cadence", style="dim")
+    table.add_column("Typical", justify="right")
+    table.add_column("Last Date", style="cyan")
+    table.add_column("Next Due", style="cyan")
+    table.add_column("Dir", justify="center")
+    table.add_column("Conf.", style="dim")
+    table.add_column("Active", justify="center")
+
+    total_out = 0.0
+    for item in items:
+        direction = "[green]in[/green]" if item["direction"] == "in" else "[red]out[/red]"
+        if item["direction"] == "out":
+            total_out += item["monthly_equivalent"]
+        active = "[green]yes[/green]" if item["active"] else "[dim]no[/dim]"
+        table.add_row(
+            item["merchant"],
+            item["cadence"],
+            f"R{item['typical_amount']:,.2f}",
+            item["last_date"],
+            item["next_date"],
+            direction,
+            item["confidence"],
+            active,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Estimated monthly committed outflow: R{total_out:,.2f}[/dim]")
+
+
+def cmd_afford(args: argparse.Namespace, config: dict) -> None:
+    """Answer whether an expense is affordable."""
+    from .forecast import ForecastEngine
+
+    db = Database(config["paths"]["database"])
+    if db.get_stats()["total_transactions"] == 0:
+        console.print("[yellow]No transactions in database.[/yellow]")
+        sys.exit(1)
+
+    result = ForecastEngine(db).can_afford(
+        args.amount,
+        days_ahead=args.in_days,
+        account=args.account,
+    )
+
+    if result["affordable"] is None:
+        console.print(f"[yellow]{result['reason']}[/yellow]")
+        return
+
+    if result["affordable"]:
+        console.print(f"\n[bold green]Yes, you can afford R{result['amount']:,.2f}.[/bold green]")
+    else:
+        console.print(
+            f"\n[bold red]No, R{result['amount']:,.2f} would overdraw your account.[/bold red]"
+        )
+    console.print(result["reason"])
+    if result["upcoming_debits_before_target"]:
+        console.print("\n[bold]Debits scheduled before the purchase:[/bold]")
+        for debit in result["upcoming_debits_before_target"]:
+            console.print(
+                f"  {debit['date']}: {debit['merchant']} - R{debit['amount']:,.2f}"
+            )
+
+
 def cmd_update_bank(args: argparse.Namespace, config: dict) -> None:
     """Update bank for existing statements that have no bank set."""
     from .database import Database
@@ -766,6 +917,9 @@ Examples:
   %(prog)s search "doctor"      Search for transactions
   %(prog)s categories           Show spending by category
   %(prog)s reimport 288_Dec.pdf Re-import a specific statement
+  %(prog)s forecast            Project balances and cashflow risks
+  %(prog)s recurring           List detected recurring payments
+  %(prog)s afford 500          Check if R500 is affordable
         """
     )
 
@@ -839,6 +993,24 @@ Examples:
     update_bank_parser = subparsers.add_parser("update-bank", help="Update bank for existing statements")
     update_bank_parser.add_argument("--bank", help="Bank name to set (default: from config)")
 
+    # Forecast command
+    forecast_parser = subparsers.add_parser("forecast", help="Project future balances and cashflow risks")
+    forecast_parser.add_argument("--days", type=int, default=31, help="Forecast horizon in days (default: 31)")
+    forecast_parser.add_argument("--no-burn", action="store_true", help="Exclude average daily spending from projection")
+    forecast_parser.add_argument("--buffer", type=float, default=0.0, help="Warn when balance dips below this buffer")
+    forecast_parser.add_argument("--account", help="Bank account number, or 'all' to consolidate every account (default: most recently active)")
+
+    # Recurring command
+    recurring_parser = subparsers.add_parser("recurring", help="Detect recurring payments and income")
+    recurring_parser.add_argument("--min-count", type=int, default=3, help="Minimum occurrences to consider recurring (default: 3)")
+    recurring_parser.add_argument("--account", help="Restrict detection to one bank account")
+
+    # Afford command
+    afford_parser = subparsers.add_parser("afford", help="Check whether an expense is affordable")
+    afford_parser.add_argument("amount", type=float, help="Expense amount in rands")
+    afford_parser.add_argument("--in-days", type=int, default=0, help="Days from today the expense would happen (default: 0)")
+    afford_parser.add_argument("--account", help="Bank account number, or 'all' to consolidate every account (default: most recently active)")
+
     # Fetch Investec command
     fetch_investec_parser = subparsers.add_parser(
         "fetch-investec", help="Fetch transactions from Investec API"
@@ -890,6 +1062,9 @@ Examples:
         "import-budget": cmd_import_budget,
         "debug-ocr": cmd_debug_ocr,
         "update-bank": cmd_update_bank,
+        "forecast": cmd_forecast,
+        "recurring": cmd_recurring,
+        "afford": cmd_afford,
         "fetch-investec": cmd_fetch_investec,
     }
 

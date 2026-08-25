@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Cashflow forecasting: recurring payment detection from transaction history
+  (weekly, fortnightly, and monthly cadences with confidence scoring and
+  staleness detection for stopped subscriptions)
+- Daily balance projection over a configurable horizon, combining committed
+  recurring flows with an average daily non-recurring burn rate
+- Cashflow risk alerts: critical warnings when the projected balance drops
+  below zero, optional safety-buffer warnings, and upcoming debits for the
+  next seven days
+- Affordability checks: simulate a purchase today or on a future date and get
+  a yes/no verdict with the resulting lowest balance, headroom, and debits
+  scheduled before the purchase
+- Account-scoped forecasting across multi-account databases, defaulting to the
+  most recently active account, with `--account all` consolidation
+- New CLI commands: `forecast`, `recurring`, and `afford`
+- New REST endpoints: `/api/v1/forecast/recurring`, `/api/v1/forecast/balance`,
+  and `/api/v1/forecast/afford`
+- Deterministic chat answers for "can I afford", recurring payment, and
+  forecast questions (date arithmetic bypasses the LLM)
+- Forecast page in the web frontend with a projected-balance chart, risk
+  alerts, a recurring payments table, and a "Can I Afford It?" simulator
+
 ## [0.1.0] - 2026-08-18
 
 ### Added

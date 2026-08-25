@@ -10,6 +10,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .database import Database
+from .forecast import DEFAULT_HORIZON_DAYS, ForecastEngine
 from .llm_backend import LLMBackend
 
 
@@ -83,6 +84,24 @@ PAY_RECIPIENT_STOP_WORDS = {
     "this", "that", "my", "me", "into",
 }
 
+AFFORD_RE = re.compile(r"\b(?:can|could|may|should)\s+i\s+afford\b", re.IGNORECASE)
+
+RECURRING_KEYWORDS = (
+    "recurring", "debit order", "regular payment", "regular payments",
+    "monthly payment", "monthly payments",
+    "comes out every month", "comes off every month",
+)
+
+FORECAST_KEYWORDS = (
+    "forecast", "projection", "projected balance", "runway",
+    "future balance", "will i run out", "how long will my money",
+)
+
+WEEKDAYS = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
+}
+
 
 def _mentions_known_synonym(query_lower: str) -> bool:
     """Check if a query mentions a known search synonym (e.g. 'ceiling')."""
@@ -118,6 +137,7 @@ class ChatInterface:
         self._last_transactions = []  # Store last query's transactions for follow-ups
         self._last_search_query = ""  # Store last search query for scope expansion
         self._last_llm_stats = None  # Store LLM performance stats
+        self._forecast_engine: ForecastEngine | None = None
 
     def start(self) -> None:
         """Start the interactive chat loop."""
@@ -173,6 +193,19 @@ class ChatInterface:
 
     def _process_query(self, query: str) -> None:
         """Process a user query and display the response."""
+        # Deterministic forecast answers bypass search and the LLM entirely
+        for handler in (
+            self._handle_afford_query,
+            self._handle_recurring_query,
+            self._handle_forecast_summary_query,
+        ):
+            handled = handler(query)
+            if handled is not None:
+                response_text, txns = handled
+                self._last_transactions = txns
+                self.console.print(f"\n[bold green]Assistant:[/bold green] {response_text}\n")
+                return
+
         # Check if user wants to expand search scope from previous query
         if self._is_scope_expansion_request(query) and self._last_search_query:
             # Re-search with previous query but force all history
@@ -991,6 +1024,162 @@ Answer concisely and directly."""
         self.console.print(table)
         self.console.print()
 
+    def _forecast_engine_instance(self) -> ForecastEngine:
+        """Lazily create the forecast engine for this chat session."""
+        if self._forecast_engine is None:
+            self._forecast_engine = ForecastEngine(self.db)
+        return self._forecast_engine
+
+    @staticmethod
+    def _format_date_words(iso_date: str) -> str:
+        """Format an ISO date as '25 August 2026' for chat answers."""
+        try:
+            parsed = datetime.strptime(iso_date[:10], "%Y-%m-%d")
+        except ValueError:
+            return iso_date
+        return parsed.strftime("%-d %B %Y")
+
+    def _parse_afford_timing(self, query_lower: str) -> tuple[int | None, str]:
+        """Extract when an expense would happen from a query.
+
+        Returns (days_ahead or None if unspecified, remaining query with the
+        timing phrase removed).
+        """
+        match = re.search(r"\bin\s+(\d+)\s+(day|week|month)s?\b", query_lower)
+        if match:
+            multiplier = {"day": 1, "week": 7, "month": 30}[match.group(2)]
+            days = int(match.group(1)) * multiplier
+            return days, query_lower.replace(match.group(0), " ")
+
+        if "next month" in query_lower:
+            return 30, query_lower.replace("next month", " ")
+        if "next week" in query_lower:
+            return 7, query_lower.replace("next week", " ")
+        if "tomorrow" in query_lower:
+            return 1, query_lower.replace("tomorrow", " ")
+
+        weekday_match = re.search(
+            r"\b(?:on|by|before)\s+(" + "|".join(WEEKDAYS) + r")\b", query_lower
+        )
+        if weekday_match:
+            target_weekday = WEEKDAYS[weekday_match.group(1)]
+            delta = (target_weekday - datetime.now().weekday()) % 7
+            return delta, query_lower.replace(weekday_match.group(0), " ")
+
+        return None, query_lower
+
+    def _parse_afford_amount(self, text: str) -> float | None:
+        """Extract the expense amount from an affordability question."""
+        currency_match = re.search(r"(?:r|zar)\s?([\d][\d,]*(?:\.\d{1,2})?)", text)
+        if currency_match:
+            return float(currency_match.group(1).replace(",", ""))
+        plain_match = re.search(r"\b([\d][\d,]*(?:\.\d{1,2})?)\b", text)
+        if plain_match:
+            return float(plain_match.group(1).replace(",", ""))
+        return None
+
+    def _handle_afford_query(self, query: str) -> tuple[str, list[dict]] | None:
+        """Deterministically answer 'can I afford X' questions."""
+        if not AFFORD_RE.search(query):
+            return None
+
+        days_ahead, remainder = self._parse_afford_timing(query.lower())
+        amount = self._parse_afford_amount(remainder)
+        if amount is None:
+            return (
+                "Tell me the amount and I'll check against your forecast, "
+                "e.g. 'Can I afford R500 on Friday?'",
+                [],
+            )
+
+        result = self._forecast_engine_instance().can_afford(amount, days_ahead=days_ahead or 0)
+        if result["affordable"] is None:
+            return result["reason"], []
+
+        target_words = self._format_date_words(result["target_date"])
+        upcoming = result["upcoming_debits_before_target"]
+        if result["affordable"]:
+            response = f"Yes, you can afford R{result['amount']:,.2f}. {result['reason']}"
+        else:
+            response = f"No, spending R{result['amount']:,.2f} on {target_words} would overdraw you. {result['reason']}"
+        if upcoming:
+            listed = ", ".join(
+                f"{d['merchant']} (R{d['amount']:,.2f} on {self._format_date_words(d['date'])})"
+                for d in upcoming[:3]
+            )
+            response += f" Coming up before then: {listed}."
+        return response, []
+
+    def _handle_recurring_query(self, query: str) -> tuple[str, list[dict]] | None:
+        """Deterministically answer questions about recurring payments."""
+        query_lower = query.lower()
+        if not any(keyword in query_lower for keyword in RECURRING_KEYWORDS):
+            return None
+
+        items = [
+            item for item in self._forecast_engine_instance().detect_recurring()
+            if item["active"]
+        ]
+        if not items:
+            return (
+                "I couldn't find any recurring payments in your transaction "
+                "history yet. Once you have at least three repeats of the same "
+                "payment, I'll pick them up automatically.",
+                [],
+            )
+
+        outflows = [i for i in items if i["direction"] == "out"]
+        inflows = [i for i in items if i["direction"] == "in"]
+        total_out = sum(i["monthly_equivalent"] for i in outflows)
+        total_in = sum(i["monthly_equivalent"] for i in inflows)
+
+        lines = []
+        for item in outflows[:8]:
+            lines.append(
+                f"- {item['merchant']}: R{item['typical_amount']:,.2f} {item['cadence']}, "
+                f"next around {self._format_date_words(item['next_date'])}"
+            )
+        response = (
+            f"You have {len(outflows)} recurring payment"
+            f"{'s' if len(outflows) != 1 else ''} totalling about "
+            f"R{total_out:,.2f} per month:\n" + "\n".join(lines)
+        )
+        if len(outflows) > 8:
+            response += f"\n... and {len(outflows) - 8} more."
+        if inflows:
+            response += (
+                f"\n\nRegular income detected: {len(inflows)} source"
+                f"{'s' if len(inflows) != 1 else ''} totalling about "
+                f"R{total_in:,.2f} per month."
+            )
+        return response, []
+
+    def _handle_forecast_summary_query(self, query: str) -> tuple[str, list[dict]] | None:
+        """Deterministically answer balance forecast questions."""
+        query_lower = query.lower()
+        if not any(keyword in query_lower for keyword in FORECAST_KEYWORDS):
+            return None
+
+        projection = self._forecast_engine_instance().project(days=DEFAULT_HORIZON_DAYS)
+        if projection["start_balance"] is None:
+            return projection["risks"][0]["message"], []
+
+        lowest_words = self._format_date_words(projection["lowest_date"])
+        end_words = self._format_date_words(projection["points"][-1]["date"])
+        critical = next((r for r in projection["risks"] if r["severity"] == "critical"), None)
+        response = (
+            f"Your balance is R{projection['start_balance']:,.2f} "
+            f"(as at {self._format_date_words(projection['start_balance_date'])}). "
+            f"Over the next {projection['days']} days it's projected to reach "
+            f"R{projection['end_balance']:,.2f} by {end_words}, dipping as low as "
+            f"R{projection['lowest_balance']:,.2f} around {lowest_words}. "
+            f"Committed monthly outflow: R{projection['committed_monthly_outflow']:,.2f}, "
+            f"inflow: R{projection['committed_monthly_inflow']:,.2f}."
+        )
+        if critical:
+            response += f"\nWarning: {critical['message'].lower()}."
+        return response, []
+
     def _handle_budget_update(self, query: str) -> str | None:
         """Check if query is a budget update or delete request and handle it."""
         query_lower = query.lower()
@@ -1129,6 +1318,20 @@ Answer concisely and directly."""
             # Budget updates don't have associated transactions
             self._last_transactions = []
             return budget_response, [], None
+
+        # Deterministic forecast answers (affordability, recurring payments,
+        # balance projections) bypass both search and the LLM, since small
+        # local models cannot do date arithmetic reliably.
+        for handler in (
+            self._handle_afford_query,
+            self._handle_recurring_query,
+            self._handle_forecast_summary_query,
+        ):
+            handled = handler(query)
+            if handled is not None:
+                response_text, txns = handled
+                self._last_transactions = txns
+                return response_text, txns, None
 
         # Check if user wants to expand search scope from previous query
         if self._is_scope_expansion_request(query) and self._last_search_query:
