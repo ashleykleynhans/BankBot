@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Cashflow forecasting: recurring payment detection from transaction history
-  (weekly, fortnightly, and monthly cadences with confidence scoring and
-  staleness detection for stopped subscriptions)
+  (weekly, fortnightly, and monthly cadences with confidence scoring,
+  staleness detection for stopped subscriptions, and a 12-month recency
+  window so long-dead payments never appear in forecasts)
 - Daily balance projection over a configurable horizon, combining committed
   recurring flows with an average daily non-recurring burn rate
 - Cashflow risk alerts: critical warnings when the projected balance drops

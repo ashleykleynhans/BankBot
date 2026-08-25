@@ -269,10 +269,11 @@ class TestDetectRecurring:
             tx_row("2026-06-01", "NETFLIX", 199.00, "debit"),
             tx_row("2026-07-01", "NETFLIX", 199.00, "debit"),
             tx_row("2026-08-01", "NETFLIX", 199.00, "debit"),
-            # Stopped weekly debit from two years ago must not project
-            tx_row("2024-03-05", "Old Gym", 300.00, "debit", category="gym"),
-            tx_row("2024-03-12", "Old Gym", 300.00, "debit", category="gym"),
-            tx_row("2024-03-19", "Old Gym", 300.00, "debit", category="gym"),
+            # Stopped weekly debit: recent enough to detect (< 12 months),
+            # but inactive (> 3 weekly intervals since the last payment)
+            tx_row("2026-03-02", "Old Gym", 300.00, "debit", category="gym"),
+            tx_row("2026-03-09", "Old Gym", 300.00, "debit", category="gym"),
+            tx_row("2026-03-16", "Old Gym", 300.00, "debit", category="gym"),
             # Balance anchor with no amount (excluded from detection)
             tx_row("2026-08-15", "Anchor Txn", 0, "credit", balance=1000.00),
         ]
@@ -281,6 +282,30 @@ class TestDetectRecurring:
         # Only Netflix projects forward: R199 debit lands 2026-08-31
         assert forecast["end_balance"] == pytest.approx(801.00)
         assert forecast["recurring_count"] == 1
+
+    def test_recurring_older_than_twelve_months_excluded(self, db, fixed_today):
+        # Monthly payments that stopped 14 months ago are ignored entirely
+        rows = [
+            tx_row("2025-04-01", "Ancient Sub", 99.00, "debit"),
+            tx_row("2025-05-01", "Ancient Sub", 99.00, "debit"),
+            tx_row("2025-06-01", "Ancient Sub", 99.00, "debit"),
+        ]
+        seed(db, rows)
+        assert ForecastEngine(db).detect_recurring() == []
+
+    def test_recurring_within_twelve_months_included(self, db, fixed_today):
+        # Last payment ~11 months ago is still within the window
+        inside_window = TODAY - timedelta(days=340)
+        rows = []
+        for months_back in range(2, -1, -1):
+            day = inside_window - timedelta(days=30 * months_back)
+            rows.append(
+                tx_row(day.isoformat(), "Still Going", 250.00, "debit")
+            )
+        seed(db, rows)
+        items = ForecastEngine(db).detect_recurring()
+        assert len(items) == 1
+        assert items[0]["merchant"] == "Still Going"
 
     def test_sorted_by_monthly_equivalent(self, db, fixed_today):
         rows = [

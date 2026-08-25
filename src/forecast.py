@@ -16,6 +16,9 @@ DEFAULT_HORIZON_DAYS = 31
 BURN_WINDOW_DAYS = 90
 DAYS_PER_MONTH = 30.44
 
+# Recurring groups whose most recent payment is older than this are ignored.
+RECENCY_WINDOW_DAYS = 365
+
 # Tokens that describe the transaction mechanics rather than the merchant.
 NOISE_TOKENS = {
     "pos", "purchase", "purchases", "debit", "credit", "order", "card",
@@ -114,7 +117,9 @@ class ForecastEngine:
         """Detect recurring payments and income from transaction history.
 
         Groups transactions by normalized description, then keeps groups whose
-        payment intervals are consistent enough to look scheduled.
+        payment intervals are consistent enough to look scheduled. Groups
+        whose most recent payment is older than RECENCY_WINDOW_DAYS are
+        ignored entirely.
 
         Args:
             min_occurrences: Minimum times a description must appear.
@@ -127,6 +132,7 @@ class ForecastEngine:
             List of recurring item dicts sorted by monthly-equivalent amount
             descending.
         """
+        cutoff_date = _today() - timedelta(days=RECENCY_WINDOW_DAYS)
         groups: dict[str, list[dict]] = {}
         for tx in self._for_account(self._load_transactions(), account):
             try:
@@ -152,6 +158,8 @@ class ForecastEngine:
             if len(group) < min_occurrences:
                 continue
             group.sort(key=lambda t: t["_date"])
+            if group[-1]["_date"] < cutoff_date:
+                continue
             intervals = [
                 (later["_date"] - earlier["_date"]).days
                 for earlier, later in zip(group, group[1:])
