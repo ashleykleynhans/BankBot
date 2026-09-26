@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Transaction search by amount in the web UI, API, and CLI (e.g. `3,341`
+  matches R3,341.00, tolerating currency symbols, signs, and thousands
+  separators)
 - Cashflow forecasting: recurring payment detection from transaction history
   (weekly, fortnightly, and monthly cadences with confidence scoring,
   staleness detection for stopped subscriptions, and a 12-month recency

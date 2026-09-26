@@ -1,5 +1,6 @@
 """SQLite database operations for bank statement storage."""
 
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -9,6 +10,11 @@ from typing import Any, Generator
 
 class Database:
     """SQLite database manager for bank statements and transactions."""
+
+    # A search term that is really a currency amount, e.g. "3,341", "R3341.00"
+    # or "-3341". Leading currency symbol, sign, spaces and thousands
+    # separators are tolerated.
+    _AMOUNT_SEARCH_RE = re.compile(r"^[rR]?\s*([+-]?\d[\d,]*(?:\.\d{1,2})?)$")
 
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
@@ -225,22 +231,42 @@ class Database:
             return [dict(row) for row in rows]
 
     def search_transactions(self, search_term: str) -> list[dict]:
-        """Search transactions by description or recipient."""
+        """Search transactions by description, recipient, or amount.
+
+        Amount search kicks in when the term is numeric after stripping a
+        currency symbol, sign, spaces and thousands separators, so "3,341",
+        "R3341.00" and "-3341" all match a R3,341.00 transaction.
+        """
         # Escape LIKE wildcards so the term is matched literally
         escaped = (
             search_term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         )
+        amount = self._parse_amount_search(search_term)
+
+        query = (
+            """SELECT t.*, s.filename, s.bank, s.account_number, s.statement_number
+               FROM transactions t
+               JOIN statements s ON t.statement_id = s.id
+               WHERE t.description LIKE ? ESCAPE '\\'
+                  OR t.recipient_or_payer LIKE ? ESCAPE '\\'"""
+        )
+        params: list = [f"%{escaped}%", f"%{escaped}%"]
+        if amount is not None:
+            query += " OR ABS(t.amount) = ?"
+            params.append(amount)
+        query += " ORDER BY t.date DESC"
+
         with self._get_connection() as conn:
-            rows = conn.execute(
-                """SELECT t.*, s.filename, s.bank, s.account_number, s.statement_number
-                    FROM transactions t
-                    JOIN statements s ON t.statement_id = s.id
-                    WHERE t.description LIKE ? ESCAPE '\\'
-                       OR t.recipient_or_payer LIKE ? ESCAPE '\\'
-                    ORDER BY t.date DESC""",
-                (f"%{escaped}%", f"%{escaped}%")
-            ).fetchall()
+            rows = conn.execute(query, params).fetchall()
             return [dict(row) for row in rows]
+
+    @classmethod
+    def _parse_amount_search(cls, search_term: str) -> float | None:
+        """Parse a search term as an amount, or return None if not numeric."""
+        match = cls._AMOUNT_SEARCH_RE.match(search_term.strip())
+        if not match:
+            return None
+        return abs(float(match.group(1).replace(",", "")))
 
     def get_transactions_in_date_range(
         self,

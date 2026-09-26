@@ -217,6 +217,26 @@ class TestTransactions:
         results = db.search_transactions("%")
         assert len(results) == 0
 
+    def test_search_transactions_by_amount(self, db_with_data):
+        """Test searching by exact amount, with or without formatting."""
+        assert len(db_with_data.search_transactions("500")) == 1
+        assert len(db_with_data.search_transactions("500.00")) == 1
+        assert len(db_with_data.search_transactions("R500")) == 1
+        assert db_with_data.search_transactions("500")[0]["description"] == "Woolworths Groceries"
+
+    def test_search_transactions_by_amount_with_separators(self, db):
+        """Test amount search ignores thousands separators and sign."""
+        stmt_id = db.insert_statement("test.pdf")
+        db.insert_transaction(stmt_id, "2025-01-15", "Large Purchase", 3341.00)
+
+        assert len(db.search_transactions("3,341")) == 1
+        assert len(db.search_transactions("3341")) == 1
+        assert len(db.search_transactions("-3341.00")) == 1
+
+    def test_search_transactions_amount_no_match(self, db_with_data):
+        """Test a numeric term with no matching amount returns nothing."""
+        assert db_with_data.search_transactions("1234") == []
+
     def test_get_transactions_in_date_range(self, db_with_data):
         """Test getting transactions by date range."""
         results = db_with_data.get_transactions_in_date_range(
