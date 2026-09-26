@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Forecast page in the web frontend with a projected-balance chart, risk
   alerts, a recurring payments table, and a "Can I Afford It?" simulator
 
+### Changed
+
+- Bumped Python and frontend dependencies to their latest versions
+
 ## [0.1.0] - 2026-08-18
 
 ### Added
