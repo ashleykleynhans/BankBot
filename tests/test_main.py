@@ -11,7 +11,8 @@ from io import StringIO
 from src import main
 from src.main import (
     cmd_import, cmd_watch, cmd_chat, cmd_list,
-    cmd_categories, cmd_stats, cmd_search, cmd_parsers, cmd_rename, cmd_reimport, cmd_serve,
+    cmd_categories, cmd_stats, cmd_search, cmd_parsers, cmd_rename, cmd_reimport,
+    cmd_reclassify, cmd_serve,
     cmd_export_budget, cmd_import_budget, cmd_debug_ocr, cmd_fetch_investec
 )
 
@@ -883,6 +884,114 @@ class TestCmdReimport:
         assert args.bank == "standardbank"
 
 
+class TestCmdReclassify:
+    """Tests for cmd_reclassify function."""
+
+    @patch('src.main.create_backend')
+    @patch('src.main.TransactionClassifier')
+    @patch('src.main.Database')
+    def test_reclassify_applies_rule_changes(self, mock_db, mock_classifier, mock_create_backend, mock_config):
+        """Test rule matches update transactions whose category differs."""
+        transaction = {
+            "id": 1, "date": "2025-01-15", "description": "Oribi Main",
+            "amount": -50.0, "category": "other", "recipient_or_payer": "SANRAL",
+        }
+        mock_db.return_value.get_all_transactions.return_value = [transaction]
+        mock_classifier.return_value.classify_rules_only.return_value = Mock(category="toll")
+
+        cmd_reclassify(argparse.Namespace(llm=False, dry_run=False), mock_config)
+
+        mock_db.return_value.update_transaction_classifications.assert_called_once_with(
+            [(1, "toll", "SANRAL")]
+        )
+
+    @patch('src.main.create_backend')
+    @patch('src.main.TransactionClassifier')
+    @patch('src.main.Database')
+    def test_reclassify_skips_unchanged(self, mock_db, mock_classifier, mock_create_backend, mock_config):
+        """Test transactions already in the right category are not updated."""
+        transaction = {
+            "id": 1, "date": "2025-01-15", "description": "Oribi Main",
+            "amount": -50.0, "category": "toll", "recipient_or_payer": None,
+        }
+        mock_db.return_value.get_all_transactions.return_value = [transaction]
+        mock_classifier.return_value.classify_rules_only.return_value = Mock(category="toll")
+
+        cmd_reclassify(argparse.Namespace(llm=False, dry_run=False), mock_config)
+
+        mock_db.return_value.update_transaction_classifications.assert_called_once_with([])
+
+    @patch('src.main.create_backend')
+    @patch('src.main.TransactionClassifier')
+    @patch('src.main.Database')
+    def test_reclassify_dry_run_writes_nothing(self, mock_db, mock_classifier, mock_create_backend, mock_config):
+        """Test dry run previews changes without writing."""
+        transaction = {
+            "id": 1, "date": "2025-01-15", "description": "Oribi Main",
+            "amount": -50.0, "category": "other", "recipient_or_payer": None,
+        }
+        mock_db.return_value.get_all_transactions.return_value = [transaction]
+        mock_classifier.return_value.classify_rules_only.return_value = Mock(category="toll")
+
+        cmd_reclassify(argparse.Namespace(llm=False, dry_run=True), mock_config)
+
+        mock_db.return_value.update_transaction_classifications.assert_not_called()
+
+    @patch('src.main.Database')
+    def test_reclassify_no_transactions(self, mock_db, mock_config):
+        """Test reclassify exits early when the database is empty."""
+        mock_db.return_value.get_all_transactions.return_value = []
+
+        cmd_reclassify(argparse.Namespace(llm=False, dry_run=False), mock_config)
+
+        mock_db.return_value.update_transaction_classifications.assert_not_called()
+
+    @patch('src.main.create_backend')
+    @patch('src.main.TransactionClassifier')
+    @patch('src.main.Database')
+    def test_reclassify_llm_for_unmatched(self, mock_db, mock_classifier, mock_create_backend, mock_config):
+        """Test --llm classifies transactions that match no rule."""
+        transaction = {
+            "id": 7, "date": "2025-01-15", "description": "Mystery Shop",
+            "amount": -50.0, "category": "other", "recipient_or_payer": None,
+        }
+        mock_db.return_value.get_all_transactions.return_value = [transaction]
+        mock_classifier.return_value.check_connection.return_value = True
+        mock_classifier.return_value.classify_rules_only.return_value = None
+        mock_classifier.return_value.classify_batch_llm.return_value = [
+            Mock(category="groceries", recipient_or_payer="Mystery Shop")
+        ]
+
+        cmd_reclassify(argparse.Namespace(llm=True, dry_run=False), mock_config)
+
+        mock_classifier.return_value.classify_batch_llm.assert_called_once()
+        mock_db.return_value.update_transaction_classifications.assert_called_once_with(
+            [(7, "groceries", "Mystery Shop")]
+        )
+
+    def test_print_reclassify_changes_truncates(self):
+        """Test the change preview table truncates long lists."""
+        changes = [
+            ({"date": "2025-01-01", "description": f"Tx {i}", "category": "other"}, "toll")
+            for i in range(55)
+        ]
+
+        main._print_reclassify_changes(changes)
+
+    @patch('src.main.create_backend')
+    @patch('src.main.TransactionClassifier')
+    @patch('src.main.Database')
+    def test_reclassify_llm_no_connection(self, mock_db, mock_classifier, mock_create_backend, mock_config):
+        """Test --llm exits when the LLM cannot be reached."""
+        mock_db.return_value.get_all_transactions.return_value = [{"id": 1}]
+        mock_classifier.return_value.check_connection.return_value = False
+
+        with pytest.raises(SystemExit) as exc:
+            cmd_reclassify(argparse.Namespace(llm=True, dry_run=False), mock_config)
+
+        assert exc.value.code == 1
+
+
 class TestCmdServe:
     """Tests for cmd_serve function."""
 
@@ -1495,6 +1604,16 @@ class TestCmdFetchInvestec:
             cmd_fetch_investec(args, config)
         mock_api.get_accounts.assert_called_once()
 
+    def test_list_accounts_error_exits(self):
+        """Test exit when account listing fails."""
+        args = self._make_args(list_accounts=True)
+        config = self._make_config()
+        mock_api = MagicMock()
+        mock_api.get_accounts.side_effect = Exception("read timed out")
+        with patch("src.investec_api.InvestecAPI", return_value=mock_api):
+            with pytest.raises(SystemExit):
+                cmd_fetch_investec(args, config)
+
     def test_single_account_auto_select(self):
         """Test auto-selecting single account."""
         args = self._make_args(from_date="2026-01-01", to_date="2026-01-31")
@@ -1535,6 +1654,20 @@ class TestCmdFetchInvestec:
             {"accountId": "a", "accountNumber": "1"},
             {"accountId": "b", "accountNumber": "2"},
         ]
+        with patch("src.investec_api.InvestecAPI", return_value=mock_api), \
+             patch("src.main.Database"), \
+             patch("src.main.create_backend"), \
+             patch("src.main.TransactionClassifier") as mock_cls:
+            mock_cls.return_value.check_connection.return_value = True
+            with pytest.raises(SystemExit):
+                cmd_fetch_investec(args, config)
+
+    def test_get_accounts_error_exits(self):
+        """Test exit when fetching accounts fails during a normal fetch."""
+        args = self._make_args(from_date="2026-01-01", to_date="2026-01-31")
+        config = self._make_config()
+        mock_api = MagicMock()
+        mock_api.get_accounts.side_effect = Exception("read timed out")
         with patch("src.investec_api.InvestecAPI", return_value=mock_api), \
              patch("src.main.Database"), \
              patch("src.main.create_backend"), \

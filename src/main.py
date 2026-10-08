@@ -400,6 +400,105 @@ def cmd_reimport(args: argparse.Namespace, config: dict) -> None:
             sys.exit(1)
 
 
+def _print_reclassify_changes(changes: list[tuple[dict, str]]) -> None:
+    """Print a table of reclassification changes, capped for readability."""
+    if not changes:
+        return
+    max_display = 50
+    table = Table(title="Reclassification changes")
+    table.add_column("Date")
+    table.add_column("Description")
+    table.add_column("Old")
+    table.add_column("New")
+    for tx, new_category in changes[:max_display]:
+        table.add_row(
+            tx.get("date", ""),
+            tx.get("description", ""),
+            tx.get("category") or "-",
+            new_category,
+        )
+    console.print(table)
+    if len(changes) > max_display:
+        console.print(f"[dim]...and {len(changes) - max_display} more[/dim]")
+
+
+def cmd_reclassify(args: argparse.Namespace, config: dict) -> None:
+    """Re-apply classification rules to existing transactions in the database.
+
+    Useful after adding or editing rules in config.yaml, without having to
+    delete the database and re-import every statement. Rules always take
+    precedence; with --llm, transactions that match no rule are also sent to
+    the LLM for classification.
+    """
+    db = Database(config["paths"]["database"])
+    transactions = db.get_all_transactions()
+
+    if not transactions:
+        console.print("[yellow]No transactions to reclassify.[/yellow]")
+        return
+
+    backend = create_backend(config)
+    classifier = TransactionClassifier(
+        backend=backend,
+        categories=config.get("categories"),
+        classification_rules=config.get("classification_rules")
+    )
+
+    use_llm = getattr(args, "llm", False)
+    dry_run = getattr(args, "dry_run", False)
+
+    if use_llm and not classifier.check_connection():
+        console.print(
+            f"[red]Cannot connect to LLM server or model '{config['llm']['model']}' "
+            f"not found.[/red]"
+        )
+        sys.exit(1)
+
+    updates: list[tuple[int, str, str | None]] = []
+    changes: list[tuple[dict, str]] = []
+    rule_count = 0
+    llm_candidates: list[dict] = []
+
+    for tx in transactions:
+        result = classifier.classify_rules_only(tx["description"], tx["amount"])
+        if result is not None:
+            if result.category != tx.get("category"):
+                updates.append((tx["id"], result.category, tx.get("recipient_or_payer")))
+                changes.append((tx, result.category))
+                rule_count += 1
+        elif use_llm:
+            llm_candidates.append(tx)
+
+    llm_count = 0
+    if llm_candidates:
+        results = classifier.classify_batch_llm(
+            [
+                {"description": tx["description"], "amount": tx["amount"]}
+                for tx in llm_candidates
+            ]
+        )
+        for tx, result in zip(llm_candidates, results):
+            if result.category != tx.get("category"):
+                updates.append((tx["id"], result.category, result.recipient_or_payer))
+                changes.append((tx, result.category))
+                llm_count += 1
+
+    _print_reclassify_changes(changes)
+
+    if dry_run:
+        console.print(
+            f"\n[yellow]Dry run: {len(updates)} change(s) would be applied "
+            f"({rule_count} from rules, {llm_count} from LLM)[/yellow]"
+        )
+        return
+
+    db.update_transaction_classifications(updates)
+    console.print(
+        f"\n[bold]Reclassified {len(updates)} of {len(transactions)} transactions "
+        f"({rule_count} from rules, {llm_count} from LLM)[/bold]"
+    )
+
+
 def cmd_export_budget(args: argparse.Namespace, config: dict) -> None:
     """Export budgets to a file."""
     db = Database(config["paths"]["database"])
@@ -687,7 +786,11 @@ def cmd_fetch_investec(args: argparse.Namespace, config: dict) -> None:
 
     # List accounts mode
     if args.list_accounts:
-        accounts = api.get_accounts()
+        try:
+            accounts = api.get_accounts()
+        except Exception as e:
+            console.print(f"[red]Failed to fetch accounts: {e}[/red]")
+            sys.exit(1)
         table = Table(title="Investec Accounts")
         table.add_column("Account ID")
         table.add_column("Account Number")
@@ -713,7 +816,11 @@ def cmd_fetch_investec(args: argparse.Namespace, config: dict) -> None:
         to_date = today.strftime("%Y-%m-%d")
 
     # Determine which accounts to fetch
-    accounts = api.get_accounts()
+    try:
+        accounts = api.get_accounts()
+    except Exception as e:
+        console.print(f"[red]Failed to fetch accounts: {e}[/red]")
+        sys.exit(1)
 
     if args.account:
         account_ids = [args.account]
@@ -917,6 +1024,8 @@ Examples:
   %(prog)s search "doctor"      Search for transactions
   %(prog)s categories           Show spending by category
   %(prog)s reimport 288_Dec.pdf Re-import a specific statement
+  %(prog)s reclassify          Re-apply classification rules to existing data
+  %(prog)s reclassify --dry-run Preview reclassification changes only
   %(prog)s forecast            Project balances and cashflow risks
   %(prog)s recurring           List detected recurring payments
   %(prog)s afford 500          Check if R500 is affordable
@@ -967,6 +1076,19 @@ Examples:
     reimport_parser.add_argument("file", nargs="?", help="Path to the PDF file to re-import")
     reimport_parser.add_argument("--all", action="store_true", help="Re-import all PDF files in statements directory")
     reimport_parser.add_argument("--bank", help="Bank parser to use (overrides config)")
+
+    # Reclassify command
+    reclassify_parser = subparsers.add_parser(
+        "reclassify", help="Re-apply classification rules to existing transactions"
+    )
+    reclassify_parser.add_argument(
+        "--llm", action="store_true",
+        help="Also re-run the LLM for transactions that match no rule"
+    )
+    reclassify_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Preview changes without writing to the database"
+    )
 
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start API server")
@@ -1057,6 +1179,7 @@ Examples:
         "parsers": cmd_parsers,
         "rename": cmd_rename,
         "reimport": cmd_reimport,
+        "reclassify": cmd_reclassify,
         "serve": cmd_serve,
         "export-budget": cmd_export_budget,
         "import-budget": cmd_import_budget,

@@ -63,6 +63,7 @@ class InvestecAPI:
         """Make an authenticated API request with retry logic.
 
         Handles:
+        - network errors (timeouts, connection failures): exponential backoff
         - 401: refresh token and retry once
         - 429: honour Retry-After header and retry
         - 5xx: exponential backoff, max 3 attempts
@@ -74,9 +75,22 @@ class InvestecAPI:
         }
         kwargs.setdefault("headers", {}).update(headers)
 
-        max_retries = 3
-        for attempt in range(max_retries):
-            response = self._client.request(method, url, **kwargs)
+        max_attempts = 3
+        last_error: Exception | None = None
+        for attempt in range(max_attempts):
+            try:
+                response = self._client.request(method, url, **kwargs)
+            except httpx.TransportError as exc:
+                last_error = exc
+                if attempt < max_attempts - 1:
+                    wait = 2**attempt
+                    logger.warning(
+                        "Network error (%s), retrying in %ds",
+                        type(exc).__name__,
+                        wait,
+                    )
+                    time.sleep(wait)
+                continue
 
             if response.status_code == 401 and attempt == 0:
                 logger.info("Token expired, re-authenticating")
@@ -85,22 +99,26 @@ class InvestecAPI:
                 continue
 
             if response.status_code == 429:
-                retry_after = int(response.headers.get("Retry-After", 5))
-                logger.warning("Rate limited, retrying after %ds", retry_after)
-                time.sleep(retry_after)
+                if attempt < max_attempts - 1:
+                    retry_after = int(response.headers.get("Retry-After", 5))
+                    logger.warning("Rate limited, retrying after %ds", retry_after)
+                    time.sleep(retry_after)
                 continue
 
             if response.status_code >= 500:
-                wait = 2**attempt
-                logger.warning(
-                    "Server error %d, retrying in %ds", response.status_code, wait
-                )
-                time.sleep(wait)
+                if attempt < max_attempts - 1:
+                    wait = 2**attempt
+                    logger.warning(
+                        "Server error %d, retrying in %ds", response.status_code, wait
+                    )
+                    time.sleep(wait)
                 continue
 
             response.raise_for_status()
             return response
 
+        if last_error is not None:
+            raise last_error
         response.raise_for_status()
         return response  # pragma: no cover
 

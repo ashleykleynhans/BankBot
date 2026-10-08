@@ -3,6 +3,7 @@
 import time
 from unittest.mock import patch, MagicMock
 
+import httpx
 import pytest
 
 from src.investec_api import InvestecAPI
@@ -304,3 +305,50 @@ class TestRetryLogic:
                 mock_auth.assert_called_once()
 
         assert result == success
+
+
+class TestNetworkErrorRetry:
+    """Tests for network-level (transport) error handling."""
+
+    def test_retry_on_read_timeout(self, api):
+        """Test that a timeout is retried and can succeed."""
+        api._token = "test_token"
+        api._token_expires_at = time.time() + 600
+
+        success = MagicMock()
+        success.status_code = 200
+        success.raise_for_status = MagicMock()
+
+        timeout = httpx.ReadTimeout("The read operation timed out")
+
+        with patch.object(api._client, "request", side_effect=[timeout, success]):
+            with patch("src.investec_api.time.sleep") as mock_sleep:
+                result = api._request("GET", "https://example.com")
+                mock_sleep.assert_called_once_with(1)
+
+        assert result == success
+
+    def test_raises_after_persistent_timeout(self, api):
+        """Test that persistent timeouts eventually raise."""
+        api._token = "test_token"
+        api._token_expires_at = time.time() + 600
+
+        timeout = httpx.ReadTimeout("The read operation timed out")
+
+        with patch.object(api._client, "request", side_effect=timeout):
+            with patch("src.investec_api.time.sleep"):
+                with pytest.raises(httpx.ReadTimeout):
+                    api._request("GET", "https://example.com")
+
+    def test_no_sleep_after_last_timeout(self, api):
+        """Test that we do not sleep once retries are exhausted."""
+        api._token = "test_token"
+        api._token_expires_at = time.time() + 600
+
+        timeout = httpx.ReadTimeout("The read operation timed out")
+
+        with patch.object(api._client, "request", side_effect=timeout):
+            with patch("src.investec_api.time.sleep") as mock_sleep:
+                with pytest.raises(httpx.ReadTimeout):
+                    api._request("GET", "https://example.com")
+                assert mock_sleep.call_count == 2

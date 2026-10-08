@@ -267,6 +267,32 @@ class TestTransactions:
         assert transactions[0]["category"] == "groceries"
         assert transactions[0]["recipient_or_payer"] == "Woolworths"
 
+    def test_update_transaction_classifications_batch(self, db):
+        """Test batch updating classifications."""
+        stmt_id = db.insert_statement("test.pdf")
+        first = db.insert_transaction(stmt_id, "2025-01-15", "One", 100)
+        second = db.insert_transaction(stmt_id, "2025-01-16", "Two", 200)
+
+        db.update_transaction_classifications([
+            (first, "groceries", "Woolworths"),
+            (second, "fuel", None),
+        ])
+
+        by_id = {tx["id"]: tx for tx in db.get_all_transactions()}
+        assert by_id[first]["category"] == "groceries"
+        assert by_id[first]["recipient_or_payer"] == "Woolworths"
+        assert by_id[second]["category"] == "fuel"
+        assert by_id[second]["recipient_or_payer"] is None
+
+    def test_update_transaction_classifications_empty(self, db):
+        """Test batch update with no changes is a no-op."""
+        stmt_id = db.insert_statement("test.pdf")
+        db.insert_transaction(stmt_id, "2025-01-15", "One", 100, category="other")
+
+        db.update_transaction_classifications([])
+
+        assert db.get_all_transactions()[0]["category"] == "other"
+
 
 class TestAggregations:
     """Tests for aggregation queries."""

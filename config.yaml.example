@@ -395,6 +395,8 @@ classification_rules:
   # Toll
   "e-toll": toll
   "Marianhill": toll
+  "Marriannhill": toll
+  "Oribi Main": toll
   "Oribi North": toll
   "Sanral": toll
   "Plaza": toll

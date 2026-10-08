@@ -217,6 +217,11 @@ bankbot reimport statements/288_Nov_2025.pdf
 # Re-import all statements
 bankbot reimport --all
 
+# Re-apply classification rules to existing transactions (after editing rules)
+bankbot reclassify
+bankbot reclassify --dry-run            # preview changes only
+bankbot reclassify --llm                # also re-run the LLM on rule misses
+
 # Import Investec PDF statements
 bankbot import --bank investec --path ~/path/to/investec/statements/
 
@@ -262,10 +267,25 @@ bankbot serve --port 3000
 
 ## Re-importing Statements
 
-If you update classification rules in `config.yaml`, you'll need to clear the database and re-import to apply the new rules:
+If you update classification rules in `config.yaml`, re-apply them to the
+existing data without re-parsing PDFs:
 
 ```bash
-# Delete the database and re-import all statements
+# Preview what the new rules would change
+bankbot reclassify --dry-run
+
+# Apply the changes (rules only)
+bankbot reclassify
+
+# Also send transactions that match no rule back through the LLM
+bankbot reclassify --llm
+```
+
+`reclassify` only touches transactions whose current category differs from the
+rule result. It preserves any existing `recipient_or_payer` set by the LLM. To
+rebuild from scratch instead, delete the database and re-import:
+
+```bash
 rm ./data/statements.db && bankbot import
 ```
 

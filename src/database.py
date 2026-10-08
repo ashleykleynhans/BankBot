@@ -174,6 +174,28 @@ class Database:
                 (category, recipient_or_payer, transaction_id)
             )
 
+    def update_transaction_classifications(
+        self,
+        updates: list[tuple[int, str, str | None]]
+    ) -> None:
+        """Update classifications for multiple transactions in a single batch.
+
+        Args:
+            updates: List of (transaction_id, category, recipient_or_payer) tuples.
+        """
+        if not updates:
+            return
+        with self._get_connection() as conn:
+            conn.executemany(
+                """UPDATE transactions
+                   SET category = ?, recipient_or_payer = ?
+                   WHERE id = ?""",
+                [
+                    (category, recipient, transaction_id)
+                    for transaction_id, category, recipient in updates
+                ]
+            )
+
     def get_unclassified_transactions(self) -> list[dict]:
         """Get all transactions without a category."""
         with self._get_connection() as conn:
