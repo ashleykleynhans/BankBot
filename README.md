@@ -48,6 +48,8 @@ Want to add support for another bank? See [Adding Support for New Banks](
 - **Web Frontend**: Svelte-based dashboard with chat, transactions, analytics, and forecast
 - **Analytics**: Pie charts showing spending breakdown per statement
 - **Budget Tracking**: Set monthly budgets per category and track actual vs budgeted spending
+- **Demo Data**: Generate an anonymised dummy database from your real
+  transactions for demos, screenshots, and testing
 - **File Watcher**: Automatically imports new statements when added
 - **Extensible**: Easy to add support for new banks
 
@@ -288,6 +290,42 @@ rebuild from scratch instead, delete the database and re-import:
 ```bash
 rm ./data/statements.db && bankbot import
 ```
+
+## Dummy Data
+
+For demos, screenshots, or testing, `scripts/seed_dummy_db.py` creates an
+anonymised copy of your database instead of touching the real one:
+
+```bash
+# Create ./data/statements_dummy.db from ./data/statements.db
+uv run python scripts/seed_dummy_db.py
+
+# Overwrite an existing dummy database with a different random seed
+uv run python scripts/seed_dummy_db.py --force --seed 7
+
+# Override a default cap or add a new one
+uv run python scripts/seed_dummy_db.py --force --cap groceries=500
+
+# Start the app against the dummy database
+BANKBOT_DB=./data/statements_dummy.db uv run bankbot serve
+```
+
+The script preserves dates, descriptions, categories, and transaction types,
+but randomises amounts (0.75–1.25× by default) and caps selected categories:
+
+| Category | Default cap |
+| --- | --- |
+| `salary` | R20,000 |
+| `transfer` | R500 |
+| `deposit` | R500 |
+
+Running balances are jittered per account (0.9–1.1×) so the balance history
+keeps its original shape. Account numbers are anonymised and raw OCR text is
+dropped. The source database is opened read-only and is never modified.
+
+Useful options: `--jitter MIN MAX`, `--balance-jitter MIN MAX`,
+`--max-amount AMOUNT`, `--no-default-caps`, and `--target PATH`. Run
+`uv run python scripts/seed_dummy_db.py --help` for the full list.
 
 ## Chat Examples
 
@@ -572,6 +610,8 @@ BankBot/
 ├── statements/           # Place PDF files here
 ├── data/
 │   └── statements.db    # SQLite database (includes budgets table)
+├── scripts/
+│   └── seed_dummy_db.py # Generate an anonymised demo database
 ├── src/
 │   ├── main.py          # CLI entry point
 │   ├── database.py      # Database operations

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.0] - 2026-10-22
 
+### Added
+
+- `scripts/seed_dummy_db.py` to generate an anonymised demo database from an
+  existing one, with jittered amounts and per-category caps (salary R20,000,
+  transfers/deposits R500)
+
 ### Changed
 
 - Bumped Python and frontend dependencies to their latest versions
