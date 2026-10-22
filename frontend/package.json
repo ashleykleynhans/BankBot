@@ -12,9 +12,9 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
     "autoprefixer": "^10.6.1",
-    "postcss": "^8.5.28",
-    "svelte": "^5.57.1",
+    "postcss": "^8.5.31",
+    "svelte": "^5.57.2",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.3.1"
+    "vite": "^8.3.5"
   }
 }
