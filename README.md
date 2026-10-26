@@ -90,6 +90,11 @@ pip install -e ".[test]"
 pip install -e ".[mlx,test]"
 ```
 
+> **Python 3.15 + MLX:** `mlx-lm` depends on `sentencepiece`, which has no
+> prebuilt cp315 wheel yet, so pip compiles it from source. Install CMake first
+> (`brew install cmake`) or use Python 3.14 and older, where a wheel is used and
+> CMake is not needed.
+
 ## Setup
 
 ### Configuration

@@ -30,6 +30,8 @@ test = [
     "pytest-cov>=7.1.0",
 ]
 mlx = [
+    # mlx-lm pulls in sentencepiece, which has no cp315 wheel yet: on Python
+    # 3.15 pip builds it from source and needs cmake (brew install cmake)
     "mlx-lm>=0.32.2",
 ]
 
