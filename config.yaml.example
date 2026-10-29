@@ -125,6 +125,7 @@ classification_rules:
   "Paypal Withdrawal Fee": fees
 
   # Deposits
+  "C SMITH": deposit
   "Credit/Deposit": deposit
   "Credit Voucher": deposit
   "FNB App Payment From": deposit
