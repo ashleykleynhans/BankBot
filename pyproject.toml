@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bankbot"
-version = "0.4.1"
+version = "0.4.2"
 description = "BankBot - Parse and query your bank statements with a local AI"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,11 +14,11 @@ dependencies = [
     "pymupdf>=1.28.2,<2.0",
     "pytesseract>=0.3.13",
     "pillow>=13.0.0",
-    "watchdog>=6.0.0",
-    "openai>=3.36.1",
+    "watchdog>=7.1.0",
+    "openai>=3.49.0",
     "rich>=15.0.0",
     "pyyaml>=6.0.3",
-    "fastapi>=0.159.1",
+    "fastapi>=0.162.4",
     "uvicorn[standard]>=0.54.0",
     "httpx>=0.28.1",
 ]
@@ -26,7 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "httpx2>=2.16.0",
-    "pytest>=9.1.1",
+    "pytest>=9.2.0",
     "pytest-cov>=7.1.0",
 ]
 mlx = [
