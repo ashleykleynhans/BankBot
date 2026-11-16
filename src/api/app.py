@@ -70,7 +70,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="BankBot API",
         description="API for querying bank statements with a local AI",
-        version="0.4.2",
+        version="0.4.3",
         lifespan=lifespan,
     )
 

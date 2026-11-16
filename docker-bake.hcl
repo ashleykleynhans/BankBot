@@ -1,5 +1,5 @@
 variable "VERSION" {
-  default = "0.4.2"
+  default = "0.4.3"
 }
 
 group "default" {
